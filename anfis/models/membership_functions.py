@@ -4,8 +4,10 @@ from skfuzzy import gaussmf, trimf, trapmf, sigmf, gbellmf, gauss2mf
 
 
 class MembershipFunction(ABC):
-    def __init__(self):
-        self.params = np.random.rand(self.num_params).tolist()
+    def __init__(self, params: list[float] | None = None):
+        self.params = params if params is not None and len(params) == self.num_params else (
+            np.random.rand(self.num_params).tolist()
+        )
 
     @property
     @abstractmethod
@@ -81,8 +83,8 @@ class Gaussian2MembershipFunction(MembershipFunction):
 
 
 class TrapezoidMembershipFunction(MembershipFunction):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, params: list[float] | None = None):
+        super().__init__(params=params)
         self.params = sorted(self.params)
 
     @property
@@ -129,8 +131,8 @@ class TrapezoidMembershipFunction(MembershipFunction):
 
 
 class TriangleMembershipFunction(MembershipFunction):
-    def __init__(self):
-        super().__init__()
+    def __init__(self, params: list[float] | None = None):
+        super().__init__(params=params)
         self.params = np.ndarray(sorted(self.params))
 
     @property

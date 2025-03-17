@@ -1,3 +1,6 @@
+import time
+from typing import List
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -12,6 +15,7 @@ class ANFIS:
         n_rules: int,
         n_inputs: int,
         mf_type: str,
+        membership_functions: List[List] | None = None
     ):
         """
         Initialize the ANFIS model.
@@ -22,21 +26,38 @@ class ANFIS:
             n_rules (int): Number of fuzzy rules.
             n_inputs (int): Number of input features.
             mf_type (str): Type of membership function to use.
+            membership_functions (list[list[MembershipFunction]]): Membership functions for each input.
         """
+        if n_rules < 1:
+            raise ValueError("Number of rules must be at least 1")
+
+        if n_inputs < 1:
+            raise ValueError("Number of inputs must be at least 1")
+
         self.input_data = input_data
         self.output_data = output_data
         self.n_rules = n_rules
         self.n_inputs = n_inputs
         self.mf_type = mf_type
+        self.membership_functions = membership_functions
 
-        factory = MembershipFunctionFactory()
-        self.membership_functions = [
-            [factory.create_membership_function(mf_type) for _ in range(self.n_rules)] for _ in range(self.n_inputs)
-        ]
+        n_membership_functions = 0 if self.membership_functions is None else (
+                len(self.membership_functions) * len(self.membership_functions[0])
+        )
+        if n_membership_functions != self.n_rules * self.n_inputs:
+            self.init_membership_functions()
+
         self.rule_params = np.random.rand(self.n_rules, 2)  # Linear rule parameters [a, b] for output: z = a*x + b
 
         self.errors = []
         self.predicted_values = []
+        self.elapsed_time = 0
+
+    def init_membership_functions(self):
+        factory = MembershipFunctionFactory()
+        self.membership_functions = [
+            [factory.create_membership_function(self.mf_type) for _ in range(self.n_rules)] for _ in range(self.n_inputs)
+        ]
 
     def fuzzification(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -124,6 +145,7 @@ class ANFIS:
             learning_rate (float): Learning rate for gradient descent.
             tolerance (float): Convergence criterion.
         """
+        start_time = time.time()
         for epoch in range(epochs):
             predicted_output = self.forward_pass(self.input_data)
             error = self.output_data - predicted_output
@@ -132,6 +154,7 @@ class ANFIS:
             np.append(self.errors, mean_error)
             np.append(self.predicted_values, predicted_output)
             if mean_error < tolerance:
+                self.elapsed_time = time.time() - start_time
                 print(f'Converged at epoch {epoch}, Error: {np.mean(np.abs(error))}')
                 break
 
@@ -146,7 +169,7 @@ class ANFIS:
                     self.membership_functions[j][i].update_params(self.input_data[:, j], error, learning_rate)
 
             if epoch % 100 == 0:
-                print(f'Epoch {epoch}, Error: {np.mean(np.abs(error))}')
+                print(f"Epoch {epoch}, Error: {np.mean(np.abs(error))}")
 
     def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
