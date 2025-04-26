@@ -26,7 +26,11 @@ def load_mat_file(path_file: str, keys: Dict[str, List[str]]) -> Dict[str, Any]:
 
 
 def load_csv_data(
-    path_folder: str, inputs: List[str] | None = None, output: str | None = None, to_numpy: bool = False
+    path_folder: str,
+    inputs: List[str] | None = None,
+    output: str | None = None,
+    to_numpy: bool = False,
+    fraction: float | None = 1.0,
 ) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """
     Load all the CSV files from `path_folder` and return a pandas DataFrame composing all the data
@@ -36,6 +40,7 @@ def load_csv_data(
         inputs (List[str]): A list of the names of the input columns to be extracted from the CSV files
         output (str): The name of the output column to be extracted from the CSV files
         to_numpy (bool): If True, convert the DataFrame to a numpy array
+        fraction (float | None): If not None, the fraction of the data to be used. If None, all the data will be used
 
     Returns:
         A tuple containing two pandas DataFrames: the first one with the input data and the second one with the output data
@@ -47,10 +52,15 @@ def load_csv_data(
     columns = (inputs if inputs else []) + ([output] if output else [])
 
     for file_name in os.listdir(path_folder):
-        if file_name.endswith(".csv"):
-            file_path = os.path.join(path_folder, file_name)
-            df = pd.read_csv(file_path)
-            data_frames.append(df[columns] if columns else df)
+        if not file_name.endswith(".csv"):
+            continue
+        print(f"Loading {file_name}...")
+
+        df = pd.read_csv(os.path.join(path_folder, file_name))
+        if fraction is not None:
+            df = df.sample(frac=fraction, random_state=1)
+
+        data_frames.append(df[columns] if columns else df)
 
     combined_data = pd.concat(data_frames, ignore_index=True)
     combined_data = combined_data.dropna().drop_duplicates().reset_index(drop=True)

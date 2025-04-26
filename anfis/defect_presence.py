@@ -113,10 +113,18 @@ def parse_arguments():
 
     # argument for the solver; it can be either 'nn' or 'ec'
     parser.add_argument(
-        '-s',
+        "-s",
         "--solver",
         default="nn",
         help="Solver to use for the optimization problem.",
+    )
+
+    parser.add_argument(
+        "-f",
+        "--fraction",
+        type=float,
+        default=1.0,
+        help="Fraction of the dataset to use for training and testing.",
     )
 
     args = parser.parse_args()
@@ -128,7 +136,7 @@ def parse_arguments():
 
 def main(args):
     # Load the dataset
-    x, y = load_csv_data("datasets/defect_presence", to_numpy=True)
+    x, y = load_csv_data("datasets/defect_presence", to_numpy=True, fraction=args.fraction)
 
     # Scaling
     x_scaled = StandardScaler().fit_transform(x)
