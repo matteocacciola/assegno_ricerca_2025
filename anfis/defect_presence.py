@@ -137,15 +137,20 @@ def parse_arguments():
 def main(args):
     # Load the dataset
     x, y = load_csv_data("datasets/defect_presence", to_numpy=True, fraction=args.fraction)
+    print(f"Loaded {x.shape[0]} samples with {x.shape[1]} features.")
 
     # Scaling
     x_scaled = StandardScaler().fit_transform(x)
+    print(f"Scaled data shape: {x_scaled.shape}")
 
     # Perform PCA to reduce dimensionality
     # x_pca = PCA(n_components=0.95, svd_solver="full").fit_transform(x_scaled)
 
     # Split the data into training and testing sets
     X_train, X_test, y_train, y_test = train_test_split(x_scaled, y, test_size=0.2, random_state=42)
+    print(f"Training data shape: {X_train.shape}, Testing data shape: {X_test.shape}")
+
+    print("Training started...")
 
     # Initialize the ANFIS model
     n_mfs = 3  # Number of membership functions
@@ -155,6 +160,8 @@ def main(args):
     else:
         y_predict, elapsed_time, result = simulate_by_ec(X_train, y_train, X_test, y_test, n_mfs)
         errors = result.rates
+
+    print("Training finished.")
 
     print("Mean Absolute Error:", metrics.mean_absolute_error(y_test, y_predict))
     print("Mean Squared Error:", metrics.mean_squared_error(y_test, y_predict))
