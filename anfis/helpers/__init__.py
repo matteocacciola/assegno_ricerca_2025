@@ -1,8 +1,10 @@
 import os
-from typing import Dict, List, Any, Tuple
+from typing import Dict, List, Any
 import pandas as pd
 from scipy.io import loadmat
 import numpy as np
+
+from models import FractionData
 
 
 def load_mat_file(path_file: str, keys: Dict[str, List[str]]) -> Dict[str, Any]:
@@ -25,60 +27,34 @@ def load_mat_file(path_file: str, keys: Dict[str, List[str]]) -> Dict[str, Any]:
     return result
 
 
-def load_csv_data(
-    path_folder: str,
-    inputs: List[str] | None = None,
-    output: str | None = None,
-    to_numpy: bool = False,
-    fraction: float | None = 1.0,
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
+def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -> pd.DataFrame:
     """
     Load all the CSV files from `path_folder` and return a pandas DataFrame composing all the data
 
     Args:
         path_folder (str): The path to the folder containing the CSV files
-        inputs (List[str]): A list of the names of the input columns to be extracted from the CSV files
-        output (str): The name of the output column to be extracted from the CSV files
-        to_numpy (bool): If True, convert the DataFrame to a numpy array
-        fraction (float | None): If not None, the fraction of the data to be used. If None, all the data will be used
+        fraction_data (FractionData | None): A FractData object containing the fraction of data to be used and a callback function
 
     Returns:
-        A tuple containing two pandas DataFrames: the first one with the input data and the second one with the output data
+        pd.DataFrame: A pandas DataFrame containing the data extracted from the CSV files
     """
     data_frames = []
-    if inputs is not None and output is None:
-        raise ValueError("If inputs is provided, output must be provided too.")
-
-    columns = (inputs if inputs else []) + ([output] if output else [])
-
     for file_name in os.listdir(path_folder):
         if not file_name.endswith(".csv"):
             continue
         print(f"Loading {file_name}...")
 
-        df = pd.read_csv(os.path.join(path_folder, file_name))
-        if fraction is not None:
-            df = df.sample(frac=fraction, random_state=1)
+        df = pd.read_csv(os.path.join(path_folder, file_name)).astype(np.float32)
+        data_frames.append(df)
 
-        data_frames.append(df[columns] if columns else df)
+    combined_data = pd.concat(
+        data_frames, ignore_index=True
+    ).dropna().drop_duplicates().sample(frac=1).reset_index(drop=True).astype(np.float32)
 
-    combined_data = pd.concat(data_frames, ignore_index=True)
-    combined_data = combined_data.dropna().drop_duplicates().reset_index(drop=True)
+    if fraction_data is None:
+        return combined_data
 
-    # If inputs is None, check the output:
-    # - if it is None, then split all the columns but the last one for the inputs, and the last one for the output
-    # - if it is not None, then split the inputs as all the columns but the one identified by the output
-    if inputs is None:
-        if output is None:
-            inputs = combined_data.columns[:-1].tolist()
-            output = combined_data.columns[-1]
-        else:
-            inputs = [col for col in combined_data.columns if col != output]
-
-    if to_numpy:
-        return combined_data[inputs].to_numpy(), combined_data[output].to_numpy()
-
-    return combined_data[inputs], combined_data[output]
+    return fraction_data.fraction_callback(combined_data, fraction_data.fraction).astype(np.float32)
 
 
 def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.ndarray:
@@ -101,7 +77,7 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
         # Assume binary classification: threshold at 0.5
         y_pred_processed = (y_pred > 0.5).astype(int)
     else:
-        # Assume multiclass: round to nearest integer
+        # Assume multiclass: round to the nearest integer
         y_pred_processed = np.round(y_pred).astype(int)
 
     return y_pred_processed

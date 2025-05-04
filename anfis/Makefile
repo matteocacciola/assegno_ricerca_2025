@@ -12,5 +12,5 @@ help:  ## Show help
 sync-requirements: ## Update the local virtual environment as well as the container with the latest requirements.
 	$(PYTHON) -m pip install --no-cache-dir -r requirements.txt
 
-run:  ## Run the application
-	$(PYTHON) -m main ${args}
+defect-presence:  ## Run the application
+	$(PYTHON) -m defect_presence ${args}

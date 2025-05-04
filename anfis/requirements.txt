@@ -1,6 +1,7 @@
 numpy
 matplotlib
 pandas
+pyarrow
 pyvolutionary
 scikit-fuzzy
 scikit-learn

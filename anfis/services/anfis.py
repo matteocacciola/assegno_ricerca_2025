@@ -1,5 +1,5 @@
 import time
-from typing import List, Tuple
+from typing import List, Tuple, Generator
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -7,20 +7,12 @@ from services.factories import MembershipFunctionFactory
 
 
 class ANFIS:
-    def __init__(
-        self,
-        input_data: np.ndarray,
-        output_data: np.ndarray,
-        n_mfs: int,
-        mf_type: str,
-        membership_functions: List[List] | None = None
-    ):
+    def __init__(self, n_inputs: int, n_mfs: int, mf_type: str, membership_functions: List[List] | None = None):
         """
         Initialize the ANFIS model.
 
         Parameters:
-            input_data (numpy.ndarray): Training input data (features).
-            output_data (numpy.ndarray): Output data (targets).
+            n_inputs (int): Number of inputs
             n_mfs (int): Number of membership functions per input
             mf_type (str): Type of membership function to use.
             membership_functions (list[list[MembershipFunction]]): Membership functions for each input.
@@ -28,9 +20,7 @@ class ANFIS:
         if n_mfs < 1:
             raise ValueError("Number of membership functions must be at least 1")
 
-        self.input_data = input_data
-        self.output_data = output_data
-        _, n_inputs = input_data.shape
+        self.n_inputs = n_inputs
         self.n_mfs = n_mfs
         self.mf_type = mf_type
         self.n_rules = self.n_mfs ** n_inputs
@@ -43,8 +33,9 @@ class ANFIS:
 
         self.rule_params = np.random.rand(self.n_rules, n_inputs + 1)  # a1...an, b
 
-        self.errors = []
-        self.predicted_values = []
+        self.errors_epoch = []
+        self.min_input_data = None
+        self.max_input_data = None
         self.elapsed_time = 0
 
     def _check_number_of_mfs(self, n_inputs: int) -> bool:
@@ -127,55 +118,112 @@ class ANFIS:
         return outputs
 
     def forward_pass(self, inputs: np.ndarray) -> Tuple[np.ndarray, np.ndarray, List[np.ndarray]]:
-        """Forward pass to compute output."""
-        mf_values = self._evaluate_memberships(inputs)
-        w = self._compute_rule_strengths(inputs, mf_values)
-        normalized_w = self._normalize(w)
-        rule_outputs = self._compute_rule_outputs(inputs)
+        """Forward pass to compute output and intermediate values needed for backprop."""
+        mf_values_batch = self._evaluate_memberships(inputs)  # Output Layer 1
+        w_batch = self._compute_rule_strengths(inputs, mf_values_batch)  # Output Layer 2
+        normalized_w_batch = self._normalize(w_batch)  # Output Layer 3
+        rule_outputs_batch = self._compute_rule_outputs(inputs)  # Output Layer 4
 
-        output = np.sum(normalized_w * rule_outputs, axis=1)
-        return output, normalized_w, mf_values
+        predicted_output_batch = np.sum(normalized_w_batch * rule_outputs_batch, axis=1)  # Output Layer 5
+        predicted_output_batch = np.nan_to_num(predicted_output_batch)  # NaN if w_sum was  0
 
-    def train(self, epochs: int = 1000, learning_rate: float = 0.01, tolerance: float = 1e-6):
+        return predicted_output_batch, normalized_w_batch, mf_values_batch
+
+    def train(
+        self,
+        data_generator: Generator[Tuple[np.ndarray, np.ndarray], None, None],
+        epochs: int,
+        learning_rate_consequent: float,
+        learning_rate_premise: float,
+        batches_per_epoch: int,
+        tolerance: float = 1e-6,
+    ) -> None:
         """
-        Train the ANFIS model using hybrid learning: Backpropagation + The Least Squares.
+        Train the ANFIS model using mini-batch gradient descent with backpropagation.
 
         Args:
-            epochs (int): Number of training epochs.
-            learning_rate (float): Learning rate for gradient descent.
-            tolerance (float): Convergence criterion.
+            data_generator (Generator): Generator that yields batches of input and output data.
+            epochs: Number of training epochs.
+            learning_rate_consequent: Learning rate for consequent parameters (Layer 4).
+            learning_rate_premise: Learning rate for premise parameters (Layer 1 MFs).
+            batches_per_epoch: Number of batches per epoch (needed for reporting and error averaging).
+            tolerance: Convergence criterion on the average error per epoch.
         """
         start_time = time.time()
+        self.errors_epoch = []  # Store absolute mean error for each epoch
 
-        n_samples, n_inputs = self.input_data.shape
+        print(f"Starting the training: {epochs} epochs...")
+
         for epoch in range(epochs):
-            predicted_output, normalized_w, mf_values = self.forward_pass(self.input_data)
-            error = self.output_data - predicted_output
+            epoch_batch_errors = []
+            batch_count = 0
 
-            mean_error = np.mean(np.abs(error))
-            self.errors.append(mean_error)
-            self.predicted_values.append(predicted_output)
+            # Iterate over the batches provided by the generator for this epoch
+            # The generator must be resettable or recreated for each epoch
+            for input_batch, output_batch in data_generator:
+                batch_size = input_batch.shape[0]
+                if batch_size == 0:
+                    continue
 
-            if mean_error < tolerance:
-                print(f"Converged at epoch {epoch}, Error: {mean_error}")
+                batch_min = np.min(input_batch, axis=0)
+                batch_max = np.max(input_batch, axis=0)
+
+                self.min_input_data = (
+                    batch_min if self.min_input_data is None else np.minimum(self.min_input_data, batch_min)
+                )
+                self.max_input_data = (
+                    batch_max if self.max_input_data is None else np.maximum(self.max_input_data, batch_max)
+                )
+
+                # --- Forward Pass over the Batch ---
+                predicted_output_batch, normalized_w_batch, mf_values_batch = self.forward_pass(input_batch)
+
+                # --- Error over the Batch ---
+                error_batch = output_batch - predicted_output_batch
+                epoch_batch_errors.extend(np.abs(error_batch))  # Collect errors of the del batch
+
+                # --- Updating Parameters (Backward Pass over the Batch) ---
+
+                # 1. Update Consequent Parameters (rule_params) - Mini-batch GD
+                #    Your current implementation already computes a gradient. Adapt it
+                #    to use the batch data and batch size.
+                inputs_aug_batch = np.column_stack([input_batch, np.ones(batch_size)])
+                for i in range(self.n_rules):
+                    w = normalized_w_batch[:, i]
+                    # Calculate the gradient for the current batch ONLY
+                    gradient = -2 * np.dot((error_batch * w), inputs_aug_batch) / batch_size
+                    self.rule_params[i] -= learning_rate_consequent * gradient
+
+                # 2. Updating Membership Functions - Mini-batch GD
+                #    This is the tricky part. Your MFs's `update_params`
+                #    method MUST be modified to accept the batch data and the batch error
+                #    and perform a gradient descent step based on the chain rule
+                #    computed ONLY on that batch.
+                for i in range(self.n_inputs):
+                    for j in range(self.n_mfs):
+                        self.membership_functions[i][j].update_params(
+                            input_batch[:, i], error_batch, learning_rate_premise
+                        )
+
+                batch_count += 1
+                # if batch_count % 50 == 0: print(f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}")
+
+                if batch_count >= batches_per_epoch:
+                    break
+
+            mean_epoch_error = np.mean(epoch_batch_errors) if epoch_batch_errors else 0
+            self.errors_epoch.append(mean_epoch_error)
+
+            if epoch % 10 == 0 or epoch == epochs - 1:  # Print each 10 epochs + the last one
+                print(f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}")
+
+            # Check for convergence
+            if mean_epoch_error < tolerance:
+                print(f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error}")
                 break
 
-            # Update consequent parameters via Least Squares
-            for i in range(self.n_rules):
-                w = normalized_w[:, i]
-                inputs_aug = np.column_stack([self.input_data, np.ones(n_samples)])
-                gradient = -2 * np.dot((error * w), inputs_aug) / n_samples
-                self.rule_params[i] -= learning_rate * gradient
-
-            # Update membership function parameters
-            for i in range(n_inputs):
-                for j in range(self.n_mfs):
-                    self.membership_functions[i][j].update_params(self.input_data[:, i], error, learning_rate)
-
-            if epoch % 100 == 0:
-                print(f"Epoch {epoch}, Error: {mean_error}")
-
         self.elapsed_time = time.time() - start_time
+        print(f"Training completed in {self.elapsed_time:.2f} seconds.")
 
     def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -192,17 +240,17 @@ class ANFIS:
 
     def plot_errors(self):
         """Plot training error over epochs."""
-        plt.plot(self.errors)
+        plt.plot(self.errors_epoch)
         plt.xlabel("Epochs")
         plt.ylabel("Mean Absolute Error")
         plt.title("Training Errors")
         plt.grid()
         plt.show()
 
-    def plot_predictions(self):
+    def plot_predictions(self, input_data: np.ndarray, output_data: np.ndarray):
         """Plot true vs predicted values."""
-        preds = self.predict(self.input_data)
-        plt.plot(self.output_data, label="Actual")
+        preds = self.predict(input_data)
+        plt.plot(output_data, label="Actual")
         plt.plot(preds, label="Predicted")
         plt.legend()
         plt.title("Actual vs Predicted")
@@ -213,9 +261,8 @@ class ANFIS:
 
     def plot_membership_functions(self):
         """Plot all membership functions."""
-        _, n_inputs = self.input_data.shape
-        for i in range(n_inputs):
-            x = np.linspace(np.min(self.input_data[:, i]), np.max(self.input_data[:, i]), 100)
+        for i in range(self.n_inputs):
+            x = np.linspace(self.min_input_data[i], self.max_input_data[i], 100)
             for mf in self.membership_functions[i]:
                 y = mf.evaluate(x)
                 plt.plot(x, y)

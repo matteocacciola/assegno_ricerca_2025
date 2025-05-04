@@ -1,3 +1,4 @@
+from .data import FractionData
 from .enums import MembershipFunctionType
 from .membership_functions import (
     MembershipFunction,
@@ -10,6 +11,7 @@ from .membership_functions import (
 )
 
 __all__ = [
+    "FractionData",
     "MembershipFunctionType",
     "MembershipFunction",
     "GaussianMembershipFunction",
