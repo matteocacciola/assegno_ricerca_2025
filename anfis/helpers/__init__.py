@@ -1,3 +1,4 @@
+import gc
 import os
 from typing import Dict, List, Any
 import pandas as pd
@@ -38,18 +39,20 @@ def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -
     Returns:
         pd.DataFrame: A pandas DataFrame containing the data extracted from the CSV files
     """
-    data_frames = []
+    combined_data = None
     for file_name in os.listdir(path_folder):
         if not file_name.endswith(".csv"):
             continue
         print(f"Loading {file_name}...")
 
         df = pd.read_csv(os.path.join(path_folder, file_name)).astype(np.float32)
-        data_frames.append(df)
+        combined_data = pd.concat(
+            [combined_data, df], ignore_index=True
+        ) if combined_data is not None else df
+        del df
+        gc.collect()
 
-    combined_data = pd.concat(
-        data_frames, ignore_index=True
-    ).dropna().drop_duplicates().sample(frac=1).reset_index(drop=True).astype(np.float32)
+    combined_data = combined_data.dropna().drop_duplicates().sample(frac=1).reset_index(drop=True).astype(np.float32)
 
     if fraction_data is None:
         return combined_data
@@ -73,11 +76,5 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
     if n_classes is None:
         n_classes = len(np.unique(y_pred))
 
-    if n_classes == 2:
-        # Assume binary classification: threshold at 0.5
-        y_pred_processed = (y_pred > 0.5).astype(int)
-    else:
-        # Assume multiclass: round to the nearest integer
-        y_pred_processed = np.round(y_pred).astype(int)
-
-    return y_pred_processed
+    # Assume binary classification (threshold at 0.5) or multiclass (round to the nearest integer)
+    return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
