@@ -206,7 +206,8 @@ class ANFIS:
                         )
 
                 batch_count += 1
-                # if batch_count % 50 == 0: print(f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}")
+                if batch_count % 50 == 0:
+                    print(f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}")
 
                 if batch_count >= batches_per_epoch:
                     break
@@ -214,7 +215,7 @@ class ANFIS:
             mean_epoch_error = np.mean(epoch_batch_errors) if epoch_batch_errors else 0
             self.errors_epoch.append(mean_epoch_error)
 
-            if epoch % 10 == 0 or epoch == epochs - 1:  # Print each 10 epochs + the last one
+            if epoch % 10 == 0 or epoch == epochs - 1:  # Print each 10 epochs plus the last one
                 print(f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}")
 
             # Check for convergence

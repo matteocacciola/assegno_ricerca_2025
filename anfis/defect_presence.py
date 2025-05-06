@@ -28,9 +28,11 @@ from services import MembershipFunctionFactory, ANFIS
 
 factory = MembershipFunctionFactory()
 
-train_parquet_path = "datasets/defect_presence/db_train.parquet"
+file_type = "csv"  # parquet
+
+train_file_path = f"datasets/defect_presence/db_train.{file_type}"
 train_metadata_path = "datasets/defect_presence/db_train.json"
-test_parquet_path = "datasets/defect_presence/db_test.parquet"
+test_file_path = f"datasets/defect_presence/db_test.{file_type}"
 
 
 class ANFISOptimizedProblem(Task):
@@ -39,6 +41,7 @@ class ANFISOptimizedProblem(Task):
     anfis_model: Any
     X_test: np.ndarray
     y_test: np.ndarray
+    n_classes: int
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
@@ -59,7 +62,7 @@ class ANFISOptimizedProblem(Task):
         ]
 
         y_pred_real = self.anfis_model.override_mfs(mfs).predict(self.X_test)
-        y_pred_ready = prepare_predictions(y_pred_real, n_classes=len(np.unique(self.y_test)))
+        y_pred_ready = prepare_predictions(y_pred_real, n_classes=self.n_classes)
         return metrics.accuracy_score(self.y_test, y_pred_ready)
 
 
@@ -67,19 +70,26 @@ class ANFISOptimizedProblem(Task):
 def simulate_by_nn(
     X_test: np.ndarray, n_inputs: int, n_mfs: int, chunk_size: int, batches_per_epoch: int
 ) -> Tuple[np.ndarray, float, Any]:
-    def create_data_generator_from_parquet():
-        def generator():
-            parquet_file = pq.ParquetFile(train_parquet_path)
+    def create_data_generator(file_type_: str):
+        def generator_parquet():
+            parquet_file = pq.ParquetFile(train_file_path)
             for batch in parquet_file.iter_batches(batch_size=chunk_size):
                 batch_df = batch.to_pandas().astype(np.float32).values
                 input_batch = batch_df[:, :-1]
                 output_batch = batch_df[:, -1]
                 yield input_batch, output_batch
-        return generator
+        def generator_csv():
+            for batch_df in pd.read_csv(train_file_path, chunksize=chunk_size, dtype=np.float32):
+                input_batch = batch_df.iloc[:, :-1].values
+                output_batch = batch_df.iloc[:, -1].values.flatten()
+                yield input_batch, output_batch
 
+        return generator_csv if file_type_ == "csv" else generator_parquet
+
+    # Create the ANFIS model
     anfis_model = ANFIS(n_inputs, n_mfs, str(MembershipFunctionType.GAUSSIAN))
 
-    data_generator_factory = create_data_generator_from_parquet()
+    data_generator_factory = create_data_generator(file_type)
     anfis_model.train(
         data_generator_factory(),
         epochs=1000,
@@ -108,6 +118,7 @@ def simulate_by_ec(
         anfis_model=anfis_model,
         X_test=X_test,
         y_test=y_test,
+        n_classes=len(np.unique(y_test)),
         variables=[
             ContinuousMultiVariable(lower_bounds=[0.01, 10], upper_bounds=[1, 100], name=f"x_{i}")
             for i in range(n_mfs * n_inputs)
@@ -240,19 +251,25 @@ def prepare_db():
     gc.collect()
 
     df_train = pd.DataFrame(np.concatenate((X_train, y_train.reshape(-1, 1)), axis=1)).astype(np.float32)
-    df_train.to_parquet(train_parquet_path, index=False)
+    if file_type == "csv":
+        df_train.to_csv(train_file_path, index=False)
+    else:
+        df_train.to_parquet(train_file_path, index=False)
     del df_train, X_train, y_train
     gc.collect()
 
     df_test = pd.DataFrame(np.concatenate((X_test, y_test.reshape(-1, 1)), axis=1)).astype(np.float32)
-    df_test.to_parquet(test_parquet_path, index=False)
+    if file_type == "csv":
+        df_test.to_csv(test_file_path, index=False)
+    else:
+        df_test.to_parquet(test_file_path, index=False)
     del df_test, X_test, y_test
     gc.collect()
 
     with open(train_metadata_path, "w") as f:
         json.dump(metadata, f)
 
-    print("Saved training and testing data to Parquet files.")
+    print(f"Saved training and testing data to {'CSV' if file_type == 'csv' else 'Parquet'} files.")
 
 
 def main():
@@ -261,10 +278,18 @@ def main():
     with open(train_metadata_path, "r") as f:
         train_metadata = json.load(f)
 
-    parquet_file = pq.ParquetFile(test_parquet_path)
-    dataset_test = parquet_file.read().to_pandas().astype(np.float32).to_numpy()
-    X_test = dataset_test[:, :-1]
-    y_test = dataset_test[:, -1]
+    if file_type not in ["csv", "parquet"]:
+        raise ValueError("Invalid file type. Use 'csv' or 'parquet'.")
+
+    if file_type == "csv":
+        dataset_test = pd.read_csv(test_file_path, dtype=np.float32)
+        X_test = dataset_test.iloc[:, :-1].values
+        y_test = dataset_test.iloc[:, -1].values.flatten()
+    else:
+        parquet_file = pq.ParquetFile(test_file_path)
+        dataset_test = parquet_file.read().to_pandas().astype(np.float32).to_numpy()
+        X_test = dataset_test[:, :-1]
+        y_test = dataset_test[:, -1]
 
     if args.solver == "nn":
         y_predict, elapsed_time, errors = simulate_by_nn(
@@ -308,6 +333,6 @@ if __name__ == "__main__":
         # This is a placeholder for the actual database preparation code
         print("Preparing the database...")
         prepare_db()
-        print(f"Database prepared and stored into `{train_parquet_path}` and `{test_parquet_path}` files.")
+        print(f"Database prepared and stored into `{train_file_path}` and `{test_file_path}` files.")
 
     main()
