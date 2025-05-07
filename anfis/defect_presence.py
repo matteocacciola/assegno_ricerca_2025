@@ -2,7 +2,7 @@ import json
 import math
 import os
 from argparse import ArgumentParser
-from typing import Any, Tuple
+from typing import Any, Tuple, List
 import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
@@ -64,6 +64,15 @@ class ANFISOptimizedProblem(Task):
         y_pred_real = self.anfis_model.override_mfs(mfs).predict(self.X_test)
         y_pred_ready = prepare_predictions(y_pred_real, n_classes=self.n_classes)
         return metrics.accuracy_score(self.y_test, y_pred_ready)
+
+
+def logs(solver: str, phrases: List[str]):
+    os.makedirs("results", exist_ok=True)
+    now = time.strftime("%Y%m%d%H%M%S")
+    with open(f"results/anfis_results_{solver}_{now}.txt", "a") as f:
+        for phrase in phrases:
+            print(phrase)
+            f.write(phrase + "\n")
 
 
 # Simulate the ANFIS model using the Feedforward Backpropagation
@@ -142,8 +151,11 @@ def simulate_by_ec(
     best = best_agent(result.evolution[-1].agents, task.minmax)
     best_params = task.transform_solution(best.position)
 
-    print(f"Best parameters: {best_params}")
-    print(f"Best accuracy: {best.cost}")
+    logs("ec", [
+        "Evolutionary algorithm: Particle Swarm Optimization"
+        f"Best parameters: {best_params}",
+        f"Best accuracy: {best.cost}"
+    ])
 
     best_params = list(best_params.values())
     membership_functions = [
@@ -273,7 +285,8 @@ def prepare_db():
 
 
 def main():
-    print("Training started...")
+    os.makedirs("results", exist_ok=True)
+    logs(args.solver, ["Training started..."])
 
     with open(train_metadata_path, "r") as f:
         train_metadata = json.load(f)
@@ -305,17 +318,16 @@ def main():
         )
         errors = result.rates
 
-    print("Training finished.")
-
-    print("Mean Absolute Error:", metrics.mean_absolute_error(y_test, y_predict))
-    print("Mean Squared Error:", metrics.mean_squared_error(y_test, y_predict))
-    print("Root Mean Squared Error:", metrics.root_mean_squared_error(y_test, y_predict))
-    print("R2 Score:", metrics.r2_score(y_test, y_predict))
-    print("Time to Convergence:", len(errors))
-    print("Final Error:", errors[-1])
-    print("Elapsed Time:", elapsed_time)
-
-    os.makedirs("results", exist_ok=True)
+    logs(args.solver, [
+        "Training finished.",
+        f"Mean Absolute Error: {metrics.mean_absolute_error(y_test, y_predict)}",
+        f"Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict)}",
+        f"Root Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict, squared=False)}",
+        f"R2 Score: {metrics.r2_score(y_test, y_predict)}",
+        f"Time to Convergence: {len(errors)}",
+        f"Final Error: {errors[-1]}",
+        f"Elapsed Time: {elapsed_time}",
+    ])
 
     # Plot the results
     plt.scatter(y_test, y_predict, color="blue")
