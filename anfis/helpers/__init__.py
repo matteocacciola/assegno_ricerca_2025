@@ -1,9 +1,11 @@
 import gc
 import os
-from typing import Dict, List, Any
+import time
+from typing import Dict, List, Any, Tuple
 import pandas as pd
 from scipy.io import loadmat
 import numpy as np
+import pyarrow.parquet as pq
 
 from models import FractionData
 
@@ -78,3 +80,60 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
 
     # Assume binary classification (threshold at 0.5) or multiclass (round to the nearest integer)
     return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
+
+
+def logs(solver: str, phrases: List[str]):
+    os.makedirs("results", exist_ok=True)
+    now = time.strftime("%Y%m%d%H%M%S")
+    with open(f"results/anfis_results_{solver}_{now}.txt", "a") as f:
+        for phrase in phrases:
+            print(phrase)
+            f.write(phrase + "\n")
+
+
+def reduce_dataset(df: pd.DataFrame, fraction: float) -> pd.DataFrame:
+    num_rows = df.shape[0]
+    num_rows_to_sample = int(num_rows * fraction)
+
+    # check the number of the rows with the latest column = 1
+    rows_with_1 = df[df.iloc[:, -1] == 1]
+    num_rows_with_1 = rows_with_1.shape[0]
+    if num_rows_with_1 > 0.5 * num_rows_to_sample:
+        num_rows_with_1 = 0.5 * num_rows_to_sample
+
+    # check the number of the rows with the latest column = 0
+    rows_with_0 = df[df.iloc[:, -1] == 0]
+    num_rows_with_0 = num_rows_to_sample - num_rows_with_1
+
+    return pd.concat(
+        [
+            rows_with_1.sample(n=int(num_rows_with_1), random_state=42),
+            rows_with_0.sample(n=int(num_rows_with_0), random_state=42),
+        ],
+        ignore_index=True,
+    ).drop_duplicates().reset_index(drop=True)
+
+
+def get_test_data(file_type: str, test_file_path: str) -> Tuple[np.ndarray, np.ndarray]:
+    if file_type == "csv":
+        dataset_test = pd.read_csv(test_file_path, dtype=np.float32)
+        X_test = dataset_test.iloc[:, :-1].values
+        y_test = dataset_test.iloc[:, -1].values.flatten()
+    else:
+        parquet_file = pq.ParquetFile(test_file_path)
+        dataset_test = parquet_file.read().to_pandas().astype(np.float32).to_numpy()
+        X_test = dataset_test[:, :-1]
+        y_test = dataset_test[:, -1]
+
+    y_test = y_test.reshape(-1, 1)
+    return X_test, y_test
+
+
+def predict_chunks(anfis_model: Any, X_test: np.ndarray, chunk_size: int) -> np.ndarray:
+    y_pred = np.array([])
+    for i in range(0, len(X_test), chunk_size):
+        batch = X_test[i: i + chunk_size]
+        y_pred_batch = anfis_model.predict(batch)
+        y_pred = np.concatenate((y_pred, y_pred_batch), axis=0) if y_pred.size else y_pred_batch
+
+    return y_pred

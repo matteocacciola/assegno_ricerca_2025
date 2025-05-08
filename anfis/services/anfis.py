@@ -3,6 +3,7 @@ from typing import List, Tuple, Generator
 import numpy as np
 import matplotlib.pyplot as plt
 
+from helpers import logs
 from services.factories import MembershipFunctionFactory
 
 
@@ -152,7 +153,7 @@ class ANFIS:
         start_time = time.time()
         self.errors_epoch = []  # Store absolute mean error for each epoch
 
-        print(f"Starting the training: {epochs} epochs...")
+        logs("nn", [f"Starting the training: {epochs} epochs..."])
 
         for epoch in range(epochs):
             epoch_batch_errors = []
@@ -207,7 +208,7 @@ class ANFIS:
 
                 batch_count += 1
                 if batch_count % 50 == 0:
-                    print(f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}")
+                    logs("nn", [f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}"])
 
                 if batch_count >= batches_per_epoch:
                     break
@@ -216,15 +217,15 @@ class ANFIS:
             self.errors_epoch.append(mean_epoch_error)
 
             if epoch % 10 == 0 or epoch == epochs - 1:  # Print each 10 epochs plus the last one
-                print(f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}")
+                logs("nn", [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
 
             # Check for convergence
             if mean_epoch_error < tolerance:
-                print(f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error}")
+                logs("nn", [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error}"])
                 break
 
         self.elapsed_time = time.time() - start_time
-        print(f"Training completed in {self.elapsed_time:.2f} seconds.")
+        logs("nn", [f"Training completed in {self.elapsed_time:.2f} seconds."])
 
     def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
