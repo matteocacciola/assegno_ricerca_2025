@@ -22,7 +22,7 @@ import time
 import gc
 import pyarrow.parquet as pq
 
-from helpers import load_csv_data, prepare_predictions, logs, reduce_dataset, get_test_data, predict_chunks
+from helpers import load_csv_data, prepare_predictions, logs, get_test_data, predict_chunks
 from models import MembershipFunctionType, FractionData
 from services import MembershipFunctionFactory, ANFIS
 
@@ -179,6 +179,15 @@ def simulate_by_ec(
 
 
 def prepare_db():
+    # fraction the combined_data so that the percentages of the output classes are preserved
+    def reduce_dataset(df: pd.DataFrame, fraction: float) -> pd.DataFrame:
+        stratify_col = df.columns[-1]
+        sampled_df, _ = train_test_split(
+            df, test_size=(1 - fraction), stratify=df[stratify_col], random_state=42
+        )
+
+        return sampled_df.drop_duplicates().reset_index(drop=True)
+
     dataset = load_csv_data(
         "datasets/defect_presence",
         fraction_data=FractionData(fraction=args.fraction, fraction_callback=reduce_dataset)
@@ -221,7 +230,7 @@ def prepare_db():
     del x_scaled, y
     gc.collect()
 
-    df_train = pd.DataFrame(np.concatenate((X_train, y_train.reshape(-1, 1)), axis=1)).astype(np.float32)
+    df_train = pd.DataFrame(np.concatenate((X_train, y_train.reshape(-1, 1)), axis=1), dtype=np.float32)
     if file_type == "csv":
         df_train.to_csv(train_file_path, index=False)
     else:
@@ -229,7 +238,7 @@ def prepare_db():
     del df_train, X_train, y_train
     gc.collect()
 
-    df_test = pd.DataFrame(np.concatenate((X_test, y_test.reshape(-1, 1)), axis=1)).astype(np.float32)
+    df_test = pd.DataFrame(np.concatenate((X_test, y_test.reshape(-1, 1)), axis=1), dtype=np.float32)
     if file_type == "csv":
         df_test.to_csv(test_file_path, index=False)
     else:

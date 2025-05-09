@@ -47,18 +47,17 @@ def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -
             continue
         print(f"Loading {file_name}...")
 
-        df = pd.read_csv(os.path.join(path_folder, file_name)).astype(np.float32)
+        df = pd.read_csv(os.path.join(path_folder, file_name), dtype=np.float32).dropna()
         combined_data = pd.concat(
             [combined_data, df], ignore_index=True
         ) if combined_data is not None else df
         del df
         gc.collect()
 
-    combined_data = combined_data.dropna().drop_duplicates().sample(frac=1).reset_index(drop=True).astype(np.float32)
-
     if fraction_data is None:
         return combined_data
 
+    print(f"Applying fraction: {fraction_data.fraction}")
     return fraction_data.fraction_callback(combined_data, fraction_data.fraction).astype(np.float32)
 
 
@@ -89,29 +88,6 @@ def logs(solver: str, phrases: List[str]):
         for phrase in phrases:
             print(phrase)
             f.write(phrase + "\n")
-
-
-def reduce_dataset(df: pd.DataFrame, fraction: float) -> pd.DataFrame:
-    num_rows = df.shape[0]
-    num_rows_to_sample = int(num_rows * fraction)
-
-    # check the number of the rows with the latest column = 1
-    rows_with_1 = df[df.iloc[:, -1] == 1]
-    num_rows_with_1 = rows_with_1.shape[0]
-    if num_rows_with_1 > 0.5 * num_rows_to_sample:
-        num_rows_with_1 = 0.5 * num_rows_to_sample
-
-    # check the number of the rows with the latest column = 0
-    rows_with_0 = df[df.iloc[:, -1] == 0]
-    num_rows_with_0 = num_rows_to_sample - num_rows_with_1
-
-    return pd.concat(
-        [
-            rows_with_1.sample(n=int(num_rows_with_1), random_state=42),
-            rows_with_0.sample(n=int(num_rows_with_0), random_state=42),
-        ],
-        ignore_index=True,
-    ).drop_duplicates().reset_index(drop=True)
 
 
 def get_test_data(file_type: str, test_file_path: str) -> Tuple[np.ndarray, np.ndarray]:
