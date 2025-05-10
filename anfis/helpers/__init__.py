@@ -1,6 +1,5 @@
 import gc
 import os
-import time
 from typing import Dict, List, Any, Tuple
 import pandas as pd
 from scipy.io import loadmat
@@ -81,10 +80,9 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
     return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
 
 
-def logs(solver: str, phrases: List[str]):
+def logs(file_suffix: str, phrases: List[str]):
     os.makedirs("results", exist_ok=True)
-    now = time.strftime("%Y%m%d%H%M%S")
-    with open(f"results/anfis_results_{solver}_{now}.txt", "a") as f:
+    with open(f"results/anfis_results_{file_suffix}.txt", "a") as f:
         for phrase in phrases:
             print(phrase)
             f.write(phrase + "\n")

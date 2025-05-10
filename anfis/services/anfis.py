@@ -1,22 +1,33 @@
 import time
-from typing import List, Tuple, Generator
+from typing import List, Tuple, Generator, Callable
 import numpy as np
 import matplotlib.pyplot as plt
 
 from helpers import logs
+from models import PredictionParser
 from services.factories import MembershipFunctionFactory
 
 
 class ANFIS:
-    def __init__(self, n_inputs: int, n_mfs: int, mf_type: str, membership_functions: List[List] | None = None):
+    def __init__(
+        self,
+        n_inputs: int,
+        n_mfs: int,
+        mf_type: str,
+        now: str,
+        membership_functions: List[List] | None = None,
+        prediction_parser: PredictionParser | None = None,
+    ):
         """
         Initialize the ANFIS model.
 
         Parameters:
-            n_inputs (int): Number of inputs
-            n_mfs (int): Number of membership functions per input
+            n_inputs (int): Number of inputs.
+            n_mfs (int): Number of membership functions per input.
             mf_type (str): Type of membership function to use.
+            now (str): Current time string for logging.
             membership_functions (list[list[MembershipFunction]]): Membership functions for each input.
+            prediction_parser (PredictionParser): Parser for predictions, with the function to apply and the number of classes.
         """
         if n_mfs < 1:
             raise ValueError("Number of membership functions must be at least 1")
@@ -25,6 +36,9 @@ class ANFIS:
         self.n_mfs = n_mfs
         self.mf_type = mf_type
         self.n_rules = self.n_mfs ** n_inputs
+        self.now = now
+
+        self.prediction_parser = prediction_parser
 
         self.rule_indices = [self._decode_rule_index(n_inputs, rule_idx) for rule_idx in range(self.n_rules)]
 
@@ -95,7 +109,7 @@ class ANFIS:
         return rule_strengths
 
     def _decode_rule_index(self, n_inputs: int, rule_idx: int) -> List[int]:
-        """Decode rule index into MF indices for each input."""
+        """Decode the rule index into MF indices for each input."""
         indices = []
         for _ in range(n_inputs):
             indices.append(rule_idx % self.n_mfs)
@@ -126,13 +140,18 @@ class ANFIS:
         rule_outputs_batch = self._compute_rule_outputs(inputs)  # Output Layer 4
 
         predicted_output_batch = np.sum(normalized_w_batch * rule_outputs_batch, axis=1)  # Output Layer 5
-        predicted_output_batch = np.nan_to_num(predicted_output_batch)  # NaN if w_sum was  0
+        predicted_output_batch = np.nan_to_num(predicted_output_batch)  # NaN if w_sum was 0
+
+        if self.prediction_parser is not None:
+            predicted_output_batch = self.prediction_parser.parser(
+                predicted_output_batch, self.prediction_parser.n_classes
+            )
 
         return predicted_output_batch, normalized_w_batch, mf_values_batch
 
     def train(
         self,
-        data_generator: Generator[Tuple[np.ndarray, np.ndarray], None, None],
+        data_generator_factory: Callable[[], Generator[Tuple[np.ndarray, np.ndarray], None, None]],
         epochs: int,
         learning_rate_consequent: float,
         learning_rate_premise: float,
@@ -143,7 +162,7 @@ class ANFIS:
         Train the ANFIS model using mini-batch gradient descent with backpropagation.
 
         Args:
-            data_generator (Generator): Generator that yields batches of input and output data.
+            data_generator_factory: A callable that returns a generator yielding batches of input and output data.
             epochs: Number of training epochs.
             learning_rate_consequent: Learning rate for consequent parameters (Layer 4).
             learning_rate_premise: Learning rate for premise parameters (Layer 1 MFs).
@@ -153,15 +172,17 @@ class ANFIS:
         start_time = time.time()
         self.errors_epoch = []  # Store absolute mean error for each epoch
 
-        logs("nn", [f"Starting the training: {epochs} epochs..."])
+        logs(f"nn_{self.now}", [f"Starting the training: {epochs} epochs..."])
 
         for epoch in range(epochs):
             epoch_batch_errors = []
             batch_count = 0
 
+            logs(f"nn_{self.now}", [f"Epoch {epoch + 1}/{epochs}: Batch generation."])
+
             # Iterate over the batches provided by the generator for this epoch
             # The generator must be resettable or recreated for each epoch
-            for input_batch, output_batch in data_generator:
+            for input_batch, output_batch in data_generator_factory():
                 batch_size = input_batch.shape[0]
                 if batch_size == 0:
                     continue
@@ -207,25 +228,24 @@ class ANFIS:
                         )
 
                 batch_count += 1
-                if batch_count % 50 == 0:
-                    logs("nn", [f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}"])
-
+                logs(
+                    f"nn_{self.now}",
+                    [f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}: input_shape={input_batch.shape}, output_shape={output_batch.shape}"],
+                )
                 if batch_count >= batches_per_epoch:
                     break
 
-            mean_epoch_error = np.mean(epoch_batch_errors) if epoch_batch_errors else 0
+            mean_epoch_error = np.mean(epoch_batch_errors)
+            logs(f"nn_{self.now}", [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
             self.errors_epoch.append(mean_epoch_error)
-
-            if epoch % 10 == 0 or epoch == epochs - 1:  # Print each 10 epochs plus the last one
-                logs("nn", [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
 
             # Check for convergence
             if mean_epoch_error < tolerance:
-                logs("nn", [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error}"])
+                logs(f"nn_{self.now}", [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error:.6f}"])
                 break
 
         self.elapsed_time = time.time() - start_time
-        logs("nn", [f"Training completed in {self.elapsed_time:.2f} seconds."])
+        logs(f"nn_{self.now}", [f"Training completed in {self.elapsed_time:.2f} seconds."])
 
     def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
@@ -240,7 +260,7 @@ class ANFIS:
         preds, _, _ = self.forward_pass(inputs)
         return preds
 
-    def plot_errors(self):
+    def plot_errors(self, save_path: str):
         """Plot training error over epochs."""
         plt.plot(self.errors_epoch)
         plt.xlabel("Epochs")
@@ -248,8 +268,9 @@ class ANFIS:
         plt.title("Training Errors")
         plt.grid()
         plt.show()
+        plt.savefig(save_path)
 
-    def plot_predictions(self, input_data: np.ndarray, output_data: np.ndarray):
+    def plot_predictions(self, input_data: np.ndarray, output_data: np.ndarray, save_path: str):
         """Plot true vs predicted values."""
         preds = self.predict(input_data)
         plt.plot(output_data, label="Actual")
@@ -260,16 +281,21 @@ class ANFIS:
         plt.ylabel("Output")
         plt.grid()
         plt.show()
+        plt.savefig(save_path)
 
-    def plot_membership_functions(self):
+    def plot_membership_functions(self, save_path: str):
         """Plot all membership functions."""
+        # create a multiplot
+        plt.suptitle("ANFIS Membership Functions")
         for i in range(self.n_inputs):
+            plt.subplot(self.n_inputs, 1, i + 1)
             x = np.linspace(self.min_input_data[i], self.max_input_data[i], 100)
             for mf in self.membership_functions[i]:
                 y = mf.evaluate(x)
                 plt.plot(x, y)
-            plt.title(f"Input {i + 1} Membership Functions")
-            plt.xlabel("Input Value")
+            plt.title(f"ANFIS Input {i + 1} Membership Functions")
+            plt.xlabel("Input Feature")
             plt.ylabel("Membership Degree")
             plt.grid()
-            plt.show()
+        plt.show()
+        plt.savefig(save_path)

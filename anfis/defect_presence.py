@@ -23,16 +23,19 @@ import gc
 import pyarrow.parquet as pq
 
 from helpers import load_csv_data, prepare_predictions, logs, get_test_data, predict_chunks
-from models import MembershipFunctionType, FractionData
+from models import MembershipFunctionType, FractionData, PredictionParser
 from services import MembershipFunctionFactory, ANFIS
 
-factory = MembershipFunctionFactory()
+mf_factory = MembershipFunctionFactory()
+mf_type = str(MembershipFunctionType.GAUSSIAN)
 
 file_type = "csv"  # parquet
 
 train_file_path = f"datasets/defect_presence/db_train.{file_type}"
 train_metadata_path = "datasets/defect_presence/db_train.json"
 test_file_path = f"datasets/defect_presence/db_test.{file_type}"
+
+now = time.strftime("%Y%m%d%H%M%S")
 
 
 class ANFISOptimizedProblem(Task):
@@ -49,10 +52,10 @@ class ANFISOptimizedProblem(Task):
     def objective_function(self, x: list[Any]):
         n_inputs = self.X_test.shape[1]
         x_transformed = self.transform_solution(x)
-        logs("ec", [f"Run objective function with x: {x_transformed}"])
+        logs(f"ec_{now}", [f"Run objective function with x: {x_transformed}"])
         mfs = [
             [
-                factory.create_membership_function(
+                mf_factory.create_membership_function(
                     self.mf_type,
                     params=[
                         x_transformed[f"x_{i * self.n_mfs + j}"][0],
@@ -64,16 +67,15 @@ class ANFISOptimizedProblem(Task):
 
         self.anfis_model.override_mfs(mfs)
 
-        y_pred_real = predict_chunks(self.anfis_model, self.X_test, self.chunk_size)
-        y_pred_ready = prepare_predictions(y_pred_real, n_classes=self.n_classes)
-        logs("ec", ["Prediction finished"])
+        y_pred = predict_chunks(self.anfis_model, self.X_test, self.chunk_size)
+        logs(f"ec_{now}", ["Prediction finished"])
 
-        return metrics.accuracy_score(self.y_test, y_pred_ready)
+        return metrics.accuracy_score(self.y_test, y_pred)
 
 
 # Simulate the ANFIS model using the Feedforward Backpropagation
 def simulate_by_nn(
-    X_test: np.ndarray, n_inputs: int, n_mfs: int, chunk_size: int, batches_per_epoch: int
+    X_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int, batches_per_epoch: int
 ) -> Tuple[np.ndarray, float, Any]:
     def create_data_generator(file_type_: str):
         def generator_parquet():
@@ -91,23 +93,32 @@ def simulate_by_nn(
 
         return generator_csv if file_type_ == "csv" else generator_parquet
 
-    # Create the ANFIS model
-    anfis_model = ANFIS(n_inputs, n_mfs, str(MembershipFunctionType.GAUSSIAN))
+    anfis_model = ANFIS(
+        n_inputs,
+        n_mfs,
+        mf_type,
+        now,
+        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
+    )
 
     data_generator_factory = create_data_generator(file_type)
     anfis_model.train(
-        data_generator_factory(),
+        data_generator_factory,
         epochs=1000,
         learning_rate_consequent=0.005,
         learning_rate_premise=0.001,
         batches_per_epoch=batches_per_epoch,
-        tolerance=1e-5
+        tolerance=1e-2,
     )
 
-    logs("nn", ["Prediction started"])
+    logs(f"nn_{now}", ["Prediction started"])
     # predict the test data, in chunks
     y_pred = predict_chunks(anfis_model, X_test, chunk_size)
-    logs("nn", ["Prediction finished"])
+    logs(f"nn_{now}", ["Prediction finished"])
+
+    # plots
+    anfis_model.plot_membership_functions(save_path=f"results/anfis_nn_mfs_{now}.png")
+    anfis_model.plot_errors(save_path=f"results/anfis_nn_errors_{now}.png")
 
     return y_pred, anfis_model.elapsed_time, anfis_model.errors_epoch
 
@@ -115,11 +126,17 @@ def simulate_by_nn(
 # Simulate the ANFIS model using Evolutionary Computation
 # You can replace the PSO with any other algorithm implemented in the library.
 def simulate_by_ec(
-    X_test: np.ndarray, y_test: np.ndarray,n_inputs: int, n_mfs: int, mf_type: str, chunk_size: int
+    X_test: np.ndarray, y_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int
 ) -> Tuple[np.ndarray, float, Any]:
-    logs("ec", ["Training started..."])
+    logs(f"ec_{now}", ["Training started..."])
 
-    anfis_model = ANFIS(n_inputs, n_mfs, mf_type)
+    anfis_model = ANFIS(
+        n_inputs,
+        n_mfs,
+        mf_type,
+        now,
+        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
+    )
 
     # we have two parameters for each membership function: the mean and the standard deviation
     task = ANFISOptimizedProblem(
@@ -128,7 +145,7 @@ def simulate_by_ec(
         anfis_model=anfis_model,
         X_test=X_test,
         y_test=y_test,
-        n_classes=len(np.unique(y_test)),
+        n_classes=n_classes,
         chunk_size=chunk_size,
         variables=[
             ContinuousMultiVariable(lower_bounds=[0.01, 10], upper_bounds=[1, 100], name=f"x_{i}")
@@ -150,12 +167,12 @@ def simulate_by_ec(
     result = ParticleSwarmOptimization(configuration, debug=True).optimize(task)
     elapsed_time = time.time() - start_time
 
-    logs("ec", ["Training finished."])
+    logs(f"ec_{now}", ["Training finished."])
 
     best = best_agent(result.evolution[-1].agents, task.minmax)
     best_params = task.transform_solution(best.position)
 
-    logs("ec", [
+    logs(f"ec_{now}", [
         "Evolutionary algorithm: Particle Swarm Optimization"
         f"Best parameters: {best_params}",
         f"Best accuracy: {best.cost}"
@@ -165,15 +182,15 @@ def simulate_by_ec(
 
     anfis_model.override_mfs([
         [
-            factory.create_membership_function(
+            mf_factory.create_membership_function(
                 mf_type, params=[best_params[i * n_mfs + j][0], best_params[i * n_mfs + j][1]]
             ) for j in range(n_mfs)
         ] for i in range(n_inputs)
     ])
 
-    logs("ec", ["Prediction started"])
+    logs(f"ec_{now}", ["Prediction started"])
     y_predict = predict_chunks(anfis_model, X_test, chunk_size)
-    logs("ec", ["Prediction finished"])
+    logs(f"ec_{now}", ["Prediction finished"])
 
     return y_predict, elapsed_time, result
 
@@ -215,7 +232,7 @@ def prepare_db():
     X_train, X_test, y_train, y_test = train_test_split(x_scaled, y, test_size=0.2, random_state=42, stratify=y)
 
     n_rows, n_inputs = X_train.shape  # Number of samples and number of input features
-    chunk_size = math.ceil(0.1 * n_rows)  # Number of samples per batch
+    chunk_size = math.ceil(0.05 * n_rows)  # Number of samples per batch
     batches_per_epoch = math.ceil(n_rows / chunk_size)
     metadata = {
         "n_rows": n_rows,
@@ -294,6 +311,7 @@ def main():
             X_test,
             train_metadata["n_inputs"],
             train_metadata["n_mfs"],
+            train_metadata["n_classes"],
             train_metadata["chunk_size"],
             train_metadata["batches_per_epoch"],
         )
@@ -303,12 +321,12 @@ def main():
             y_test,
             train_metadata["n_inputs"],
             train_metadata["n_mfs"],
-            str(MembershipFunctionType.GAUSSIAN),
+            train_metadata["n_classes"],
             train_metadata["chunk_size"],
         )
         errors = result.rates
 
-    logs(args.solver, [
+    logs(f"{args.solver}_{now}", [
         f"Mean Absolute Error: {metrics.mean_absolute_error(y_test, y_predict)}",
         f"Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict)}",
         f"Root Mean Squared Error: {metrics.root_mean_squared_error(y_test, y_predict)}",

@@ -1,4 +1,5 @@
-from typing import Any
+from typing import Any, Callable
+import numpy as np
 from pydantic import BaseModel, model_validator, field_validator
 
 
@@ -28,3 +29,8 @@ class FractionData(BaseModel):
         if self.fraction is not None and self.fraction < 1 and self.fraction_callback is None:
             raise ValueError("fraction_callback must be provided if fraction < 1")
         return self
+
+
+class PredictionParser(BaseModel):
+    parser: Callable[[np.ndarray, int | None], np.ndarray]
+    n_classes: int | None = None
