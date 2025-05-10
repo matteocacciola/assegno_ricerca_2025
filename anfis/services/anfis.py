@@ -157,6 +157,8 @@ class ANFIS:
         learning_rate_premise: float,
         batches_per_epoch: int,
         tolerance: float = 1e-6,
+        min_improvement: float | None = None,
+        patience: int | None = None,
     ) -> None:
         """
         Train the ANFIS model using mini-batch gradient descent with backpropagation.
@@ -168,9 +170,15 @@ class ANFIS:
             learning_rate_premise: Learning rate for premise parameters (Layer 1 MFs).
             batches_per_epoch: Number of batches per epoch (needed for reporting and error averaging).
             tolerance: Convergence criterion on the average error per epoch.
+            min_improvement: Optional. If provided, specifies the minimum relative improvement in error required between epochs (as a fraction). Early stopping is disabled if None.
+            patience: Optional. If min_improvement is provided, specifies the number of consecutive epochs without significant improvement before stopping.
         """
         start_time = time.time()
         self.errors_epoch = []  # Store absolute mean error for each epoch
+
+        if min_improvement is not None and patience is None:
+            raise ValueError("If `min_improvement` is specified, `patience` must also be specified")
+        no_improvement_count = 0
 
         logs(f"nn_{self.now}", [f"Starting the training: {epochs} epochs..."])
 
@@ -230,19 +238,44 @@ class ANFIS:
                 batch_count += 1
                 logs(
                     f"nn_{self.now}",
-                    [f" Epoch {epoch+1}, Batch {batch_count}/{batches_per_epoch}: input_shape={input_batch.shape}, output_shape={output_batch.shape}"],
+                    [f" Epoch {epoch + 1}, Batch {batch_count}/{batches_per_epoch}: input_shape={input_batch.shape}, output_shape={output_batch.shape}"],
                 )
                 if batch_count >= batches_per_epoch:
                     break
 
-            mean_epoch_error = np.mean(epoch_batch_errors)
+            mean_epoch_error = float(np.mean(epoch_batch_errors))
             logs(f"nn_{self.now}", [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
             self.errors_epoch.append(mean_epoch_error)
 
-            # Check for convergence
+            # Check for convergence based on an absolute error threshold
             if mean_epoch_error < tolerance:
                 logs(f"nn_{self.now}", [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error:.6f}"])
                 break
+
+            # Check for improvement only if min_improvement was specified
+            if min_improvement is not None and epoch > 0:
+                relative_improvement = (self.errors_epoch[-2] - mean_epoch_error) / self.errors_epoch[-2]
+
+                if relative_improvement < min_improvement:
+                    no_improvement_count += 1
+                    logs(
+                        f"nn_{self.now}",
+                        [f"Insufficient improvement: {relative_improvement:.6f} < {min_improvement}. No improvement count: {no_improvement_count}/{patience}"]
+                    )
+
+                    if no_improvement_count >= patience:
+                        logs(
+                            f"nn_{self.now}",
+                            [f"Early stopping after {epoch + 1} epochs due to {patience} consecutive epochs without significant improvement"]
+                        )
+                        break
+                else:
+                    # Reset counter if there was a significant improvement
+                    no_improvement_count = 0
+                    logs(
+                        f"nn_{self.now}",
+                        [f"Significant improvement: {relative_improvement:.6f} >= {min_improvement}. Resetting counter."]
+                    )
 
         self.elapsed_time = time.time() - start_time
         logs(f"nn_{self.now}", [f"Training completed in {self.elapsed_time:.2f} seconds."])

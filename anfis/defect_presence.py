@@ -109,6 +109,8 @@ def simulate_by_nn(
         learning_rate_premise=0.001,
         batches_per_epoch=batches_per_epoch,
         tolerance=1e-2,
+        min_improvement=1e-4,
+        patience=10,
     )
 
     logs(f"nn_{now}", ["Prediction started"])
@@ -148,7 +150,7 @@ def simulate_by_ec(
         n_classes=n_classes,
         chunk_size=chunk_size,
         variables=[
-            ContinuousMultiVariable(lower_bounds=[0.01, 10], upper_bounds=[1, 100], name=f"x_{i}")
+            ContinuousMultiVariable(lower_bounds=[-1, 0], upper_bounds=[1, 1.5], name=f"x_{i}")
             for i in range(n_mfs * n_inputs)
         ],
         minmax="max",
