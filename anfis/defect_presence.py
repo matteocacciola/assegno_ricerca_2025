@@ -48,7 +48,7 @@ now = time.strftime("%Y%m%d%H%M%S")
 
 
 def plot_errors(log_file_path: str):
-    # open the file results/anfis_results_nn_20250510143431.txt
+    # open the file `log_file_path`
     # read the file and search the lines with the format "Epoch xxx/1000, Absolute Mean Error: yyy" where xxx is an integer and yyy is a float
     # get the yyy value and add it to a list
     # plot the list with the x axis as the epoch number and the y axis as the yyy value
@@ -148,10 +148,10 @@ def simulate_by_nn(
         patience=10,
     )
 
-    logs(f"nn_{now}", ["Prediction started"])
+    logs("nn", now, ["Prediction started"])
     # predict the test data, in chunks
     y_pred = predict_chunks(anfis_model, X_test, chunk_size)
-    logs(f"nn_{now}", ["Prediction finished"])
+    logs("nn", now, ["Prediction finished"])
 
     # plots
     anfis_model.plot_membership_functions(save_path=f"results/anfis_nn_mfs_{now}.png")
@@ -165,7 +165,7 @@ def simulate_by_nn(
 def simulate_by_ec(
     X_test: np.ndarray, y_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int
 ) -> Tuple[np.ndarray, float, Any, Any]:
-    logs(f"ec_{now}", ["Training started..."])
+    logs("ec", now, ["Training started..."])
 
     anfis_model = ANFIS(
         n_inputs,
@@ -204,12 +204,12 @@ def simulate_by_ec(
     result = ParticleSwarmOptimization(configuration, debug=True).optimize(task)
     elapsed_time = time.time() - start_time
 
-    logs(f"ec_{now}", ["Training finished."])
+    logs("ec", now, ["Training finished."])
 
     best = best_agent(result.evolution[-1].agents, task.minmax)
     best_params = task.transform_solution(best.position)
 
-    logs(f"ec_{now}", [
+    logs("ec", now, [
         "Evolutionary algorithm: Particle Swarm Optimization"
         f"Best parameters: {best_params}",
         f"Best accuracy: {best.cost}"
@@ -225,9 +225,9 @@ def simulate_by_ec(
         ] for i in range(n_inputs)
     ])
 
-    logs(f"ec_{now}", ["Prediction started"])
+    logs("ec", now, ["Prediction started"])
     y_predict = predict_chunks(anfis_model, X_test, chunk_size)
-    logs(f"ec_{now}", ["Prediction finished"])
+    logs("ec", now, ["Prediction finished"])
 
     return y_predict, elapsed_time, result, anfis_model
 

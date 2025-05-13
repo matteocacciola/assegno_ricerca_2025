@@ -84,9 +84,9 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
     return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
 
 
-def logs(file_suffix: str, phrases: List[str]):
+def logs(solver: str, date: str, phrases: List[str]):
     os.makedirs("results", exist_ok=True)
-    with open(f"results/anfis_results_{file_suffix}.txt", "a") as f:
+    with open(f"results/anfis_{solver}_results_{date}.txt", "a") as f:
         for phrase in phrases:
             print(phrase)
             f.write(phrase + "\n")
@@ -156,7 +156,7 @@ def load_anfis_model(model_path: str) -> Any:
 def save_results(
     y_test: np.ndarray, y_predict: np.ndarray, solver: str, now: str, errors: np.ndarray, elapsed_time: float
 ):
-    logs(f"{solver}_{now}", [
+    logs(solver, now, [
         f"Mean Absolute Error: {metrics.mean_absolute_error(y_test, y_predict)}",
         f"Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict)}",
         f"Root Mean Squared Error: {metrics.root_mean_squared_error(y_test, y_predict)}",
@@ -172,4 +172,4 @@ def save_results(
     plt.xlabel("True Defect Category")
     plt.ylabel("Predicted Defect Category")
     plt.title("ANFIS Regression - True vs Predicted Defect Categories")
-    plt.savefig(f"results/anfis_results_{solver}.png")
+    plt.savefig(f"results/anfis_{solver}_results_{now}.png")

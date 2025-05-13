@@ -180,13 +180,13 @@ class ANFIS:
             raise ValueError("If `min_improvement` is specified, `patience` must also be specified")
         no_improvement_count = 0
 
-        logs(f"nn_{self.now}", [f"Starting the training: {epochs} epochs..."])
+        logs("nn", self.now, [f"Starting the training: {epochs} epochs..."])
 
         for epoch in range(epochs):
             epoch_batch_errors = []
             batch_count = 0
 
-            logs(f"nn_{self.now}", [f"Epoch {epoch + 1}/{epochs}: Batch generation."])
+            logs("nn", self.now, [f"Epoch {epoch + 1}/{epochs}: Batch generation."])
 
             # Iterate over the batches provided by the generator for this epoch
             # The generator must be resettable or recreated for each epoch
@@ -237,19 +237,20 @@ class ANFIS:
 
                 batch_count += 1
                 logs(
-                    f"nn_{self.now}",
+                    "nn",
+                    self.now,
                     [f" Epoch {epoch + 1}, Batch {batch_count}/{batches_per_epoch}: input_shape={input_batch.shape}, output_shape={output_batch.shape}"],
                 )
                 if batch_count >= batches_per_epoch:
                     break
 
             mean_epoch_error = float(np.mean(epoch_batch_errors))
-            logs(f"nn_{self.now}", [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
+            logs("nn", self.now, [f"Epoch {epoch + 1}/{epochs}, Absolute Mean Error: {mean_epoch_error:.6f}"])
             self.errors_epoch.append(mean_epoch_error)
 
             # Check for convergence based on an absolute error threshold
             if mean_epoch_error < tolerance:
-                logs(f"nn_{self.now}", [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error:.6f}"])
+                logs("nn", self.now, [f"Convergence reached at the epoch {epoch + 1}, Error: {mean_epoch_error:.6f}"])
                 break
 
             # Check for improvement only if min_improvement was specified
@@ -259,13 +260,15 @@ class ANFIS:
                 if relative_improvement < min_improvement:
                     no_improvement_count += 1
                     logs(
-                        f"nn_{self.now}",
+                        "nn",
+                        self.now,
                         [f"Insufficient improvement: {relative_improvement:.6f} < {min_improvement}. No improvement count: {no_improvement_count}/{patience}"]
                     )
 
                     if no_improvement_count >= patience:
                         logs(
-                            f"nn_{self.now}",
+                            "nn",
+                            self.now,
                             [f"Early stopping after {epoch + 1} epochs due to {patience} consecutive epochs without significant improvement"]
                         )
                         break
@@ -273,12 +276,13 @@ class ANFIS:
                     # Reset counter if there was a significant improvement
                     no_improvement_count = 0
                     logs(
-                        f"nn_{self.now}",
+                        "nn",
+                        self.now,
                         [f"Significant improvement: {relative_improvement:.6f} >= {min_improvement}. Resetting counter."]
                     )
 
         self.elapsed_time = time.time() - start_time
-        logs(f"nn_{self.now}", [f"Training completed in {self.elapsed_time:.2f} seconds."])
+        logs("nn", self.now, [f"Training completed in {self.elapsed_time:.2f} seconds."])
 
     def predict(self, inputs: np.ndarray) -> np.ndarray:
         """
