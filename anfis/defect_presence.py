@@ -90,7 +90,7 @@ class ANFISOptimizedProblem(Task):
     def objective_function(self, x: list[Any]):
         n_inputs = self.X_test.shape[1]
         x_transformed = self.transform_solution(x)
-        logs(f"ec_{now}", [f"Run objective function with x: {x_transformed}"])
+        print(f"Run objective function with x: {x_transformed}")
         mfs = [
             [
                 mf_factory.create_membership_function(
@@ -105,8 +105,9 @@ class ANFISOptimizedProblem(Task):
 
         self.anfis_model.override_mfs(mfs)
 
+        print("Prediction started")
         y_pred = predict_chunks(self.anfis_model, self.X_test, self.chunk_size)
-        logs(f"ec_{now}", ["Prediction finished"])
+        print("Prediction finished")
 
         return metrics.accuracy_score(self.y_test, y_pred)
 
