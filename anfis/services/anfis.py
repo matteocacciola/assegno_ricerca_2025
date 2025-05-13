@@ -300,8 +300,8 @@ class ANFIS:
         plt.ylabel("Mean Absolute Error")
         plt.title("Training Errors")
         plt.grid()
-        plt.show()
         plt.savefig(save_path)
+        plt.close()
 
     def plot_predictions(self, input_data: np.ndarray, output_data: np.ndarray, save_path: str):
         """Plot true vs predicted values."""
@@ -313,8 +313,8 @@ class ANFIS:
         plt.xlabel("Samples")
         plt.ylabel("Output")
         plt.grid()
-        plt.show()
         plt.savefig(save_path)
+        plt.close()
 
     def plot_membership_functions(self, save_path: str):
         """Plot all membership functions."""
@@ -330,5 +330,5 @@ class ANFIS:
             plt.xlabel("Input Feature")
             plt.ylabel("Membership Degree")
             plt.grid()
-        plt.show()
         plt.savefig(save_path)
+        plt.close()

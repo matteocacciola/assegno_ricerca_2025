@@ -1,10 +1,14 @@
 import gc
 import os
+import pickle
 from typing import Dict, List, Any, Tuple
 import pandas as pd
+from matplotlib import pyplot as plt
 from scipy.io import loadmat
 import numpy as np
 import pyarrow.parquet as pq
+from sklearn import metrics
+from sklearn.metrics import ConfusionMatrixDisplay
 
 from models import FractionData
 
@@ -111,3 +115,61 @@ def predict_chunks(anfis_model: Any, X_test: np.ndarray, chunk_size: int) -> np.
         y_pred = np.concatenate((y_pred, y_pred_batch), axis=0) if y_pred.size else y_pred_batch
 
     return y_pred
+
+
+def plot_confusion_matrix(y_test: np.ndarray, y_predict: np.ndarray, solver: str, now: str, classes: List[str]):
+    os.makedirs("results", exist_ok=True)
+
+    # create and save the confusion matrix
+    confusion_matrix = metrics.confusion_matrix(y_test, y_predict, labels=classes)
+
+    disp = ConfusionMatrixDisplay(
+        confusion_matrix=confusion_matrix,
+        display_labels=classes
+    )
+    disp.plot()
+    plt.savefig(f"results/anfis_{solver}_confusion_matrix_{now}.png")
+    plt.close()
+
+
+def save_anfis_model(anfis_model: Any, y_predict: np.ndarray, errors: np.ndarray, solver: str, now: str):
+    # save the ANFIS model in a pickle file
+    with open(f"results/anfis_{solver}_model_{now}.pkl", "wb") as f:
+        pickle.dump(anfis_model, f)
+
+    # save the predictions in a CSV file
+    predictions_df = pd.DataFrame(y_predict, columns=[f"Predicted Class {i}" for i in range(y_predict.shape[1])])
+    predictions_df.to_csv(f"results/anfis_{solver}_predictions_{now}.csv", index=False)
+
+    # save the errors in a CSV file
+    errors_df = pd.DataFrame(errors, columns=["Error"])
+    errors_df.to_csv(f"results/anfis_{solver}_errors_{now}.csv", index=False)
+
+
+def load_anfis_model(model_path: str) -> Any:
+    # load the ANFIS model from a pickle file
+    with open(model_path, "rb") as f:
+        anfis_model = pickle.load(f)
+    return anfis_model
+
+
+def save_results(
+    y_test: np.ndarray, y_predict: np.ndarray, solver: str, now: str, errors: np.ndarray, elapsed_time: float
+):
+    logs(f"{solver}_{now}", [
+        f"Mean Absolute Error: {metrics.mean_absolute_error(y_test, y_predict)}",
+        f"Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict)}",
+        f"Root Mean Squared Error: {metrics.root_mean_squared_error(y_test, y_predict)}",
+        f"R2 Score: {metrics.r2_score(y_test, y_predict)}",
+        f"Time to Convergence: {len(errors)}",
+        f"Final Error: {errors[-1]}",
+        f"Elapsed Time: {elapsed_time}",
+    ])
+
+    # Plot the results
+    plt.scatter(y_test, y_predict, color="blue")
+    plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color="red", linewidth=2)
+    plt.xlabel("True Defect Category")
+    plt.ylabel("Predicted Defect Category")
+    plt.title("ANFIS Regression - True vs Predicted Defect Categories")
+    plt.savefig(f"results/anfis_results_{solver}.png")

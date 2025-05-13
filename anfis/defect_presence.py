@@ -22,7 +22,16 @@ import time
 import gc
 import pyarrow.parquet as pq
 
-from helpers import load_csv_data, prepare_predictions, logs, get_test_data, predict_chunks
+from helpers import (
+    load_csv_data,
+    prepare_predictions,
+    logs,
+    get_test_data,
+    predict_chunks,
+    plot_confusion_matrix,
+    save_anfis_model,
+    save_results,
+)
 from models import MembershipFunctionType, FractionData, PredictionParser
 from services import MembershipFunctionFactory, ANFIS
 
@@ -36,6 +45,35 @@ train_metadata_path = "datasets/defect_presence/db_train.json"
 test_file_path = f"datasets/defect_presence/db_test.{file_type}"
 
 now = time.strftime("%Y%m%d%H%M%S")
+
+
+def plot_errors(log_file_path: str):
+    # open the file results/anfis_results_nn_20250510143431.txt
+    # read the file and search the lines with the format "Epoch xxx/1000, Absolute Mean Error: yyy" where xxx is an integer and yyy is a float
+    # get the yyy value and add it to a list
+    # plot the list with the x axis as the epoch number and the y axis as the yyy value
+    # save the plot as a png file
+
+    with open(log_file_path, 'r') as f:
+        lines = f.readlines()
+        errors = []
+        epochs = []
+        for line in lines:
+            if "Epoch" in line and "Absolute Mean Error" in line:
+                parts = line.split(",")
+                epoch_part = parts[0].split(" ")[1]
+                epoch_part = epoch_part.split("/")[0]
+                error_part = parts[1].split(":")[1].strip()
+                epochs.append(int(epoch_part))
+                errors.append(float(error_part))
+
+    plt.plot(epochs, errors)
+    plt.xlabel("Epochs")
+    plt.ylabel("Mean Absolute Error")
+    plt.title("Training Errors")
+    plt.grid()
+    plt.savefig("results/anfis_nn_errors_20250510143431.png")
+    plt.close()
 
 
 class ANFISOptimizedProblem(Task):
@@ -76,7 +114,7 @@ class ANFISOptimizedProblem(Task):
 # Simulate the ANFIS model using the Feedforward Backpropagation
 def simulate_by_nn(
     X_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int, batches_per_epoch: int
-) -> Tuple[np.ndarray, float, Any]:
+) -> Tuple[np.ndarray, float, Any, Any]:
     def create_data_generator(file_type_: str):
         def generator_parquet():
             parquet_file = pq.ParquetFile(train_file_path)
@@ -122,14 +160,14 @@ def simulate_by_nn(
     anfis_model.plot_membership_functions(save_path=f"results/anfis_nn_mfs_{now}.png")
     anfis_model.plot_errors(save_path=f"results/anfis_nn_errors_{now}.png")
 
-    return y_pred, anfis_model.elapsed_time, anfis_model.errors_epoch
+    return y_pred, anfis_model.elapsed_time, anfis_model.errors_epoch, anfis_model
 
 
 # Simulate the ANFIS model using Evolutionary Computation
 # You can replace the PSO with any other algorithm implemented in the library.
 def simulate_by_ec(
     X_test: np.ndarray, y_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int
-) -> Tuple[np.ndarray, float, Any]:
+) -> Tuple[np.ndarray, float, Any, Any]:
     logs(f"ec_{now}", ["Training started..."])
 
     anfis_model = ANFIS(
@@ -194,7 +232,7 @@ def simulate_by_ec(
     y_predict = predict_chunks(anfis_model, X_test, chunk_size)
     logs(f"ec_{now}", ["Prediction finished"])
 
-    return y_predict, elapsed_time, result
+    return y_predict, elapsed_time, result, anfis_model
 
 
 def prepare_db():
@@ -309,7 +347,7 @@ def main():
     X_test, y_test = get_test_data(file_type, test_file_path)
 
     if args.solver == "nn":
-        y_predict, elapsed_time, errors = simulate_by_nn(
+        y_predict, elapsed_time, errors, anfis_model = simulate_by_nn(
             X_test,
             train_metadata["n_inputs"],
             train_metadata["n_mfs"],
@@ -318,7 +356,7 @@ def main():
             train_metadata["batches_per_epoch"],
         )
     else:
-        y_predict, elapsed_time, result = simulate_by_ec(
+        y_predict, elapsed_time, result, anfis_model = simulate_by_ec(
             X_test,
             y_test,
             train_metadata["n_inputs"],
@@ -328,23 +366,9 @@ def main():
         )
         errors = result.rates
 
-    logs(f"{args.solver}_{now}", [
-        f"Mean Absolute Error: {metrics.mean_absolute_error(y_test, y_predict)}",
-        f"Mean Squared Error: {metrics.mean_squared_error(y_test, y_predict)}",
-        f"Root Mean Squared Error: {metrics.root_mean_squared_error(y_test, y_predict)}",
-        f"R2 Score: {metrics.r2_score(y_test, y_predict)}",
-        f"Time to Convergence: {len(errors)}",
-        f"Final Error: {errors[-1]}",
-        f"Elapsed Time: {elapsed_time}",
-    ])
-
-    # Plot the results
-    plt.scatter(y_test, y_predict, color="blue")
-    plt.plot([min(y_test), max(y_test)], [min(y_test), max(y_test)], color="red", linewidth=2)
-    plt.xlabel("True Defect Category")
-    plt.ylabel("Predicted Defect Category")
-    plt.title("ANFIS Regression - True vs Predicted Defect Categories")
-    plt.savefig(f"results/anfis_results_{args.solver}.png")
+    save_anfis_model(anfis_model, y_predict, errors, args.solver, now)
+    plot_confusion_matrix(y_test, y_predict, args.solver, now, ["No defect", "Defect"])
+    save_results(y_test, y_predict, args.solver, now, errors, elapsed_time)
 
 
 if __name__ == "__main__":
