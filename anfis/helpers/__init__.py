@@ -92,19 +92,19 @@ def logs(solver: str, date: str, phrases: List[str]):
             f.write(phrase + "\n")
 
 
-def get_test_data(file_type: str, test_file_path: str) -> Tuple[np.ndarray, np.ndarray]:
+def get_data(file_type: str, file_path: str) -> Tuple[np.ndarray, np.ndarray]:
     if file_type == "csv":
-        dataset_test = pd.read_csv(test_file_path, dtype=np.float32)
-        X_test = dataset_test.iloc[:, :-1].values
-        y_test = dataset_test.iloc[:, -1].values.flatten()
+        df = pd.read_csv(file_path, dtype=np.float32)
+        x = df.iloc[:, :-1].values
+        y = df.iloc[:, -1].values.flatten()
     else:
-        parquet_file = pq.ParquetFile(test_file_path)
-        dataset_test = parquet_file.read().to_pandas().astype(np.float32).to_numpy()
-        X_test = dataset_test[:, :-1]
-        y_test = dataset_test[:, -1]
+        parquet_file = pq.ParquetFile(file_path)
+        df = parquet_file.read().to_pandas().astype(np.float32).to_numpy()
+        x = df[:, :-1]
+        y = df[:, -1]
 
-    y_test = y_test.reshape(-1, 1)
-    return X_test, y_test
+    y = y.reshape(-1, 1)
+    return x, y
 
 
 def predict_chunks(anfis_model: Any, X_test: np.ndarray, chunk_size: int) -> np.ndarray:

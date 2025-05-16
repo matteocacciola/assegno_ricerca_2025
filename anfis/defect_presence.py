@@ -17,6 +17,7 @@ from pyvolutionary import (
     ParticleSwarmOptimization,
     ParticleSwarmOptimizationConfig,
     Task,
+    EarlyStopping,
 )
 import time
 import gc
@@ -26,7 +27,7 @@ from helpers import (
     load_csv_data,
     prepare_predictions,
     logs,
-    get_test_data,
+    get_data,
     predict_chunks,
     plot_confusion_matrix,
     save_anfis_model,
@@ -80,15 +81,15 @@ class ANFISOptimizedProblem(Task):
     n_mfs: int
     mf_type: str
     anfis_model: Any
-    X_test: np.ndarray
-    y_test: np.ndarray
+    X_train: np.ndarray
+    y_train: np.ndarray
     n_classes: int
     chunk_size: int
 
     model_config = ConfigDict(arbitrary_types_allowed=True)
 
     def objective_function(self, x: list[Any]):
-        n_inputs = self.X_test.shape[1]
+        n_inputs = self.X_train.shape[1]
         x_transformed = self.transform_solution(x)
         mfs = [
             [
@@ -104,8 +105,8 @@ class ANFISOptimizedProblem(Task):
 
         self.anfis_model.override_mfs(mfs)
 
-        y_pred = predict_chunks(self.anfis_model, self.X_test, self.chunk_size)
-        return metrics.accuracy_score(self.y_test, y_pred)
+        y_pred = predict_chunks(self.anfis_model, self.X_train, self.chunk_size)
+        return metrics.accuracy_score(self.y_train, y_pred)
 
 
 # Simulate the ANFIS model using the Feedforward Backpropagation
@@ -163,7 +164,7 @@ def simulate_by_nn(
 # Simulate the ANFIS model using Evolutionary Computation
 # You can replace the PSO with any other algorithm implemented in the library.
 def simulate_by_ec(
-    X_test: np.ndarray, y_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int
+    X_test: np.ndarray, n_inputs: int, n_mfs: int, n_classes: int, chunk_size: int
 ) -> Tuple[np.ndarray, float, Any, Any]:
     logs("ec", now, ["Training started..."])
 
@@ -175,13 +176,15 @@ def simulate_by_ec(
         prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
     )
 
+    X_train, y_train = get_data(file_type, train_file_path)
+
     # we have two parameters for each membership function: the mean and the standard deviation
     task = ANFISOptimizedProblem(
         n_mfs=n_mfs,
         mf_type=str(MembershipFunctionType.GAUSSIAN),
         anfis_model=anfis_model,
-        X_test=X_test,
-        y_test=y_test,
+        X_train=X_train,
+        y_train=y_train,
         n_classes=n_classes,
         chunk_size=chunk_size,
         variables=[
@@ -192,12 +195,13 @@ def simulate_by_ec(
     )
 
     configuration = ParticleSwarmOptimizationConfig(
-        population_size=200,
-        fitness_error=10e-4,
+        population_size=100,
+        fitness_error=1e-4,
         max_cycles=100,
         c1=0.1,
         c2=0.1,
         w=[0.35, 1],
+        early_stopping=EarlyStopping(patience=5, min_delta=0.01),
     )
 
     start_time = time.time()
@@ -341,7 +345,7 @@ def main():
     if file_type not in ["csv", "parquet"]:
         raise ValueError("Invalid file type. Use 'csv' or 'parquet'.")
 
-    X_test, y_test = get_test_data(file_type, test_file_path)
+    X_test, y_test = get_data(file_type, test_file_path)
 
     if args.solver == "nn":
         y_predict, elapsed_time, errors, anfis_model = simulate_by_nn(
@@ -355,7 +359,6 @@ def main():
     else:
         y_predict, elapsed_time, result, anfis_model = simulate_by_ec(
             X_test,
-            y_test,
             train_metadata["n_inputs"],
             train_metadata["n_mfs"],
             train_metadata["n_classes"],
