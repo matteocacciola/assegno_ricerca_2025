@@ -187,11 +187,11 @@ def simulate_by_ec(
         y_train=y_train,
         n_classes=n_classes,
         chunk_size=chunk_size,
-        variables=[
+        variables=[  # type: ignore
             ContinuousMultiVariable(lower_bounds=[-1, 0], upper_bounds=[1, 1.5], name=f"x_{i}")
             for i in range(n_mfs * n_inputs)
         ],
-        minmax="max",
+        minmax="max",  # type: ignore
     )
 
     configuration = ParticleSwarmOptimizationConfig(

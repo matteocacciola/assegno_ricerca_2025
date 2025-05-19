@@ -46,7 +46,7 @@ def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -
     """
     combined_data = None
     for file_name in os.listdir(path_folder):
-        if not file_name.endswith(".csv"):
+        if not os.path.isfile(os.path.join(path_folder, file_name)) or not file_name.endswith(".csv"):
             continue
         print(f"Loading {file_name}...")
 
