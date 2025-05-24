@@ -400,7 +400,7 @@ def main():
         errors = result.rates
 
     save_anfis_model(anfis_model, y_predict, errors, args.solver, now)
-    plot_confusion_matrix(y_test, y_predict, args.solver, now, ["No defect", "Defect"])
+    plot_confusion_matrix(y_test, y_predict, args.solver, now, [0, 1])
     save_results(y_test, y_predict, args.solver, now, errors, elapsed_time)
 
 

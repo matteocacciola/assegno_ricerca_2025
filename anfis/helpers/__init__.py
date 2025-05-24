@@ -115,7 +115,7 @@ def predict_chunks(anfis_model: Any, X_test: np.ndarray, chunk_size: int) -> np.
     return y_pred
 
 
-def plot_confusion_matrix(y_test: np.ndarray, y_predict: np.ndarray, solver: str, now: str, classes: List[str]):
+def plot_confusion_matrix(y_test: np.ndarray, y_predict: np.ndarray, solver: str, now: str, classes: List):
     os.makedirs("results", exist_ok=True)
 
     # create and save the confusion matrix
