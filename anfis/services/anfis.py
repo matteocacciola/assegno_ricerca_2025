@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from helpers import logs
-from models import PredictionParser
 from services.factories import MembershipFunctionFactory
 
 
@@ -16,7 +15,7 @@ class ANFIS:
         mf_type: str,
         now: str,
         membership_functions: List[List] | None = None,
-        prediction_parser: PredictionParser | None = None,
+        prediction_parser: Callable[[np.ndarray], np.ndarray] | None = None,
     ):
         """
         Initialize the ANFIS model.
@@ -27,7 +26,7 @@ class ANFIS:
             mf_type (str): Type of membership function to use.
             now (str): Current time string for logging.
             membership_functions (list[list[MembershipFunction]]): Membership functions for each input.
-            prediction_parser (PredictionParser): Parser for predictions, with the function to apply and the number of classes.
+            prediction_parser (Callable[[np.ndarray], np.ndarray]): Optional function to parse the predicted output.
         """
         if n_mfs < 1:
             raise ValueError("Number of membership functions must be at least 1")
@@ -143,9 +142,7 @@ class ANFIS:
         predicted_output_batch = np.nan_to_num(predicted_output_batch)  # NaN if w_sum was 0
 
         if self.prediction_parser is not None:
-            predicted_output_batch = self.prediction_parser.parser(
-                predicted_output_batch, self.prediction_parser.n_classes
-            )
+            predicted_output_batch = self.prediction_parser(predicted_output_batch)
 
         return predicted_output_batch, normalized_w_batch, mf_values_batch
 

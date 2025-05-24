@@ -1,4 +1,4 @@
-from .data import FractionData, PredictionParser
+from .data import FractionData
 from .enums import MembershipFunctionType
 from .membership_functions import (
     MembershipFunction,
@@ -12,7 +12,6 @@ from .membership_functions import (
 
 __all__ = [
     "FractionData",
-    "PredictionParser",
     "MembershipFunctionType",
     "MembershipFunction",
     "GaussianMembershipFunction",

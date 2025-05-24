@@ -61,10 +61,10 @@ def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -
         return combined_data
 
     print(f"Applying fraction: {fraction_data.fraction}")
-    return fraction_data.fraction_callback(combined_data, fraction_data.fraction).astype(np.float32)
+    return fraction_data.fraction_callback(combined_data, fraction_data.fraction)
 
 
-def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.ndarray:
+def prepare_predictions(y_pred: np.ndarray) -> np.ndarray:
     """
     Prepares predictions for classification metrics:
     - If binary classification (n_classes=2), apply 0.5 threshold.
@@ -72,13 +72,11 @@ def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.
 
     Args:
         y_pred (np.ndarray): The predicted values.
-        n_classes (int | None): The number of classes. If None, it will be inferred from y_pred.
 
     Returns:
         np.ndarray: The processed predictions.
     """
-    if n_classes is None:
-        n_classes = len(np.unique(y_pred))
+    n_classes = len(np.unique(y_pred))
 
     # Assume binary classification (threshold at 0.5) or multiclass (round to the nearest integer)
     return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
@@ -137,8 +135,10 @@ def save_anfis_model(anfis_model: Any, y_predict: np.ndarray, errors: np.ndarray
     with open(f"results/anfis_{solver}_model_{now}.pkl", "wb") as f:
         pickle.dump(anfis_model, f)
 
+    y_predict = y_predict.reshape(-1, 1)
+
     # save the predictions in a CSV file
-    predictions_df = pd.DataFrame(y_predict, columns=[f"Predicted Class {i}" for i in range(y_predict.shape[1])])
+    predictions_df = pd.DataFrame(y_predict, columns=[f"Predicted Output {i}" for i in range(y_predict.shape[1])])
     predictions_df.to_csv(f"results/anfis_{solver}_predictions_{now}.csv", index=False)
 
     # save the errors in a CSV file

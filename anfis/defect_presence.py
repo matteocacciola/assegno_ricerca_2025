@@ -33,7 +33,7 @@ from helpers import (
     save_anfis_model,
     save_results,
 )
-from models import MembershipFunctionType, FractionData, PredictionParser
+from models import MembershipFunctionType, FractionData
 from services import MembershipFunctionFactory, ANFIS
 
 mf_factory = MembershipFunctionFactory()
@@ -134,7 +134,7 @@ def simulate_by_nn(
         n_mfs,
         mf_type,
         now,
-        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
+        prediction_parser=prepare_predictions,
     )
 
     data_generator_factory = create_data_generator(file_type)
@@ -173,7 +173,7 @@ def simulate_by_ec(
         n_mfs,
         mf_type,
         now,
-        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
+        prediction_parser=prepare_predictions,
     )
 
     X_train, y_train = get_data(file_type, train_file_path)
@@ -239,12 +239,41 @@ def simulate_by_ec(
 def prepare_db():
     # fraction the combined_data so that the percentages of the output classes are preserved
     def reduce_dataset(df: pd.DataFrame, fraction: float) -> pd.DataFrame:
+        print("Reducing dataset...")
         stratify_col = df.columns[-1]
         sampled_df, _ = train_test_split(
             df, test_size=(1 - fraction), stratify=df[stratify_col], random_state=42
         )
-
-        return sampled_df.drop_duplicates().reset_index(drop=True)
+        n_classes_ = len(np.unique(sampled_df.iloc[:, -1]))
+        if n_classes_ == 2:
+            print(f"Dataset with {n_classes_} classes retrieved.")
+            return sampled_df
+        # If the number of classes is not 2, we need to balance the dataset
+        # by sampling the same number of rows from each class
+        del sampled_df, stratify_col
+        gc.collect()
+        print(f"Imbalanced dataset with {n_classes_} classes. Balancing the dataset...")
+        n_samples = int(df.shape[0] * fraction)
+        n_samples = n_samples if n_samples % 2 == 0 else n_samples + 1
+        y_ = df.iloc[:, -1]
+        mask_1 = y_ == 1
+        rows_with_y_1 = y_.index[mask_1]
+        rows_with_y_not_1 = y_.index[~mask_1]
+        del y_, mask_1
+        gc.collect()
+        if len(rows_with_y_1) > 0.5 * n_samples:
+            df_1 = df.iloc[rows_with_y_1].sample(n=0.5 * n_samples, random_state=42)
+            df_not_1 = df.iloc[rows_with_y_not_1].sample(n=0.5 * n_samples, random_state=42)
+        else:
+            df_1 = df.iloc[rows_with_y_1]
+            df_not_1 = df.iloc[rows_with_y_not_1].sample(n=n_samples - len(rows_with_y_1), random_state=42)
+        del rows_with_y_1, rows_with_y_not_1
+        gc.collect()
+        sampled_df = pd.concat([df_1, df_not_1])
+        del df_1, df_not_1
+        gc.collect()
+        print("Dataset reduced.")
+        return sampled_df
 
     dataset = load_csv_data(
         "datasets/defect_presence",
@@ -258,6 +287,10 @@ def prepare_db():
     gc.collect()
 
     print(f"Loaded {x.shape[0]} samples with {x.shape[1]} features.")
+
+    n_classes = len(np.unique(y))
+    if n_classes != 2:
+        raise ValueError(f"The dataset must have exactly two classes; number of classes found: {n_classes}")
 
     # Scaling
     x_scaled = StandardScaler().fit_transform(x)
@@ -281,7 +314,7 @@ def prepare_db():
         "n_outputs": y_test.shape[1],
         "chunk_size": chunk_size,
         "batches_per_epoch": batches_per_epoch,
-        "n_classes": len(np.unique(y)),
+        "n_classes": n_classes,
         "n_mfs": 3,  # Number of membership functions per input
     }
 
@@ -379,5 +412,7 @@ if __name__ == "__main__":
         print("Preparing the database...")
         prepare_db()
         print(f"Database prepared and stored into `{train_file_path}` and `{test_file_path}` files.")
+
+        time.sleep(5)
 
     main()
