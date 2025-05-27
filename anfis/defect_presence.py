@@ -33,7 +33,7 @@ from helpers import (
     save_anfis_model,
     save_results,
 )
-from models import MembershipFunctionType, FractionData
+from models import MembershipFunctionType, FractionData, PredictionParser
 from services import MembershipFunctionFactory, ANFIS
 
 mf_factory = MembershipFunctionFactory()
@@ -48,7 +48,7 @@ test_file_path = f"datasets/defect_presence/db_test.{file_type}"
 now = time.strftime("%Y%m%d%H%M%S")
 
 
-def plot_errors(log_file_path: str):
+def plot_errors_from_logfile(log_file_path: str):
     # open the file `log_file_path`
     # read the file and search the lines with the format "Epoch xxx/1000, Absolute Mean Error: yyy" where xxx is an integer and yyy is a float
     # get the yyy value and add it to a list
@@ -134,7 +134,7 @@ def simulate_by_nn(
         n_mfs,
         mf_type,
         now,
-        prediction_parser=prepare_predictions,
+        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
     )
 
     data_generator_factory = create_data_generator(file_type)
@@ -173,7 +173,7 @@ def simulate_by_ec(
         n_mfs,
         mf_type,
         now,
-        prediction_parser=prepare_predictions,
+        prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
     )
 
     X_train, y_train = get_data(file_type, train_file_path)
@@ -195,9 +195,9 @@ def simulate_by_ec(
     )
 
     configuration = ParticleSwarmOptimizationConfig(
-        population_size=100,
-        fitness_error=1e-4,
-        max_cycles=100,
+        population_size=20,
+        fitness_error=1e-3,
+        max_cycles=300,
         c1=0.1,
         c2=0.1,
         w=[0.35, 1],
@@ -208,7 +208,7 @@ def simulate_by_ec(
     result = ParticleSwarmOptimization(configuration, debug=True).optimize(task)
     elapsed_time = time.time() - start_time
 
-    logs("ec", now, ["Training finished."])
+    logs("ec", now, ["Training completed in {:.2f} seconds.".format(elapsed_time)])
 
     best = best_agent(result.evolution[-1].agents, task.minmax)
     best_params = task.transform_solution(best.position)

@@ -4,6 +4,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 
 from helpers import logs
+from models import PredictionParser
 from services.factories import MembershipFunctionFactory
 
 
@@ -15,7 +16,7 @@ class ANFIS:
         mf_type: str,
         now: str,
         membership_functions: List[List] | None = None,
-        prediction_parser: Callable[[np.ndarray], np.ndarray] | None = None,
+        prediction_parser: PredictionParser | None = None,
     ):
         """
         Initialize the ANFIS model.
@@ -26,7 +27,7 @@ class ANFIS:
             mf_type (str): Type of membership function to use.
             now (str): Current time string for logging.
             membership_functions (list[list[MembershipFunction]]): Membership functions for each input.
-            prediction_parser (Callable[[np.ndarray], np.ndarray]): Optional function to parse the predicted output.
+            prediction_parser (PredictionParser): Parser for predictions, with the function to apply and the number of classes.
         """
         if n_mfs < 1:
             raise ValueError("Number of membership functions must be at least 1")
@@ -142,7 +143,9 @@ class ANFIS:
         predicted_output_batch = np.nan_to_num(predicted_output_batch)  # NaN if w_sum was 0
 
         if self.prediction_parser is not None:
-            predicted_output_batch = self.prediction_parser(predicted_output_batch)
+            predicted_output_batch = self.prediction_parser.parser(
+                predicted_output_batch, self.prediction_parser.n_classes
+            )
 
         return predicted_output_batch, normalized_w_batch, mf_values_batch
 
@@ -321,6 +324,8 @@ class ANFIS:
         """Plot all membership functions."""
         # create a multiplot
         plt.suptitle("ANFIS Membership Functions")
+        # size of the figure, entire screen
+        plt.figure(figsize=(25, 3.5 * self.n_inputs))
         for i in range(self.n_inputs):
             plt.subplot(self.n_inputs, 1, i + 1)
             x = np.linspace(self.min_input_data[i], self.max_input_data[i], 100)
@@ -328,8 +333,8 @@ class ANFIS:
                 y = mf.evaluate(x)
                 plt.plot(x, y)
             plt.title(f"ANFIS Input {i + 1} Membership Functions")
-            plt.xlabel("Input Feature")
             plt.ylabel("Membership Degree")
             plt.grid()
+        plt.xlabel("Input Feature")
         plt.savefig(save_path)
         plt.close()

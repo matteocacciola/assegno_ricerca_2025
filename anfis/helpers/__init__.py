@@ -64,7 +64,7 @@ def load_csv_data(path_folder: str, fraction_data: FractionData | None = None) -
     return fraction_data.fraction_callback(combined_data, fraction_data.fraction)
 
 
-def prepare_predictions(y_pred: np.ndarray) -> np.ndarray:
+def prepare_predictions(y_pred: np.ndarray, n_classes: int | None = None) -> np.ndarray:
     """
     Prepares predictions for classification metrics:
     - If binary classification (n_classes=2), apply 0.5 threshold.
@@ -72,11 +72,13 @@ def prepare_predictions(y_pred: np.ndarray) -> np.ndarray:
 
     Args:
         y_pred (np.ndarray): The predicted values.
+        n_classes (int | None): The number of classes. If None, it will be inferred from y_pred.
 
     Returns:
         np.ndarray: The processed predictions.
     """
-    n_classes = len(np.unique(y_pred))
+    if n_classes is None:
+        n_classes = len(np.unique(y_pred))
 
     # Assume binary classification (threshold at 0.5) or multiclass (round to the nearest integer)
     return (y_pred > 0.5).astype(int) if n_classes == 2 else np.round(y_pred).astype(int)
@@ -119,21 +121,21 @@ def plot_confusion_matrix(y_test: np.ndarray, y_predict: np.ndarray, solver: str
     os.makedirs("results", exist_ok=True)
 
     # create and save the confusion matrix
-    confusion_matrix = metrics.confusion_matrix(y_test, y_predict, labels=classes)
+    confusion_matrix = metrics.confusion_matrix(y_test, y_predict, labels=classes, normalize="true")
 
     disp = ConfusionMatrixDisplay(
         confusion_matrix=confusion_matrix,
         display_labels=classes
     )
     disp.plot()
-    plt.savefig(f"results/anfis_{solver}_confusion_matrix_{now}.png")
+    plt.savefig(f"results/anfis_{solver}_confusion_matrix_normalized_{now}.png")
     plt.close()
 
 
 def save_anfis_model(anfis_model: Any, y_predict: np.ndarray, errors: np.ndarray, solver: str, now: str):
     # save the ANFIS model in a pickle file
     with open(f"results/anfis_{solver}_model_{now}.pkl", "wb") as f:
-        pickle.dump(anfis_model, f)
+        pickle.dump(anfis_model, f)  # type: ignore
 
     y_predict = y_predict.reshape(-1, 1)
 
@@ -173,3 +175,18 @@ def save_results(
     plt.ylabel("Predicted Defect Category")
     plt.title("ANFIS Regression - True vs Predicted Defect Categories")
     plt.savefig(f"results/anfis_{solver}_results_{now}.png")
+    plt.close()
+
+    # Plot the errors
+    errors_df = pd.read_csv(f"results/anfis_{solver}_errors_{now}.csv")
+    errors = errors_df.to_numpy()
+    errors = errors[::-1]
+    epochs = range(len(errors))
+
+    plt.plot(epochs, errors)
+    plt.xlabel("Epochs")
+    plt.ylabel("Mean Absolute Error")
+    plt.title("Training Errors")
+    plt.grid()
+    plt.savefig(f"results/anfis_{solver}_errors_{now}.png")
+    plt.close()
