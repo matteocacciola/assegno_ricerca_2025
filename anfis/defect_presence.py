@@ -14,8 +14,10 @@ from sklearn import metrics
 from pyvolutionary import (
     best_agent,
     ContinuousMultiVariable,
-    ParticleSwarmOptimization,
-    ParticleSwarmOptimizationConfig,
+    GreyWolfOptimization,
+    GreyWolfOptimizationConfig,
+    # ParticleSwarmOptimization,
+    # ParticleSwarmOptimizationConfig,
     Task,
     EarlyStopping,
 )
@@ -34,7 +36,7 @@ from helpers import (
     save_results,
 )
 from models import MembershipFunctionType, FractionData, PredictionParser
-from services import MembershipFunctionFactory, ANFIS
+from services import MembershipFunctionFactory, ANFIS, ParallelANFIS
 
 mf_factory = MembershipFunctionFactory()
 mf_type = str(MembershipFunctionType.GAUSSIAN)
@@ -168,12 +170,14 @@ def simulate_by_ec(
 ) -> Tuple[np.ndarray, float, Any, Any]:
     logs("ec", now, ["Training started..."])
 
-    anfis_model = ANFIS(
+    anfis_model = ParallelANFIS(
         n_inputs,
         n_mfs,
         mf_type,
         now,
         prediction_parser=PredictionParser(parser=prepare_predictions, n_classes=n_classes),
+        n_workers=4,
+        use_multiprocessing=True,
     )
 
     X_train, y_train = get_data(file_type, train_file_path)
@@ -194,18 +198,25 @@ def simulate_by_ec(
         minmax="max",  # type: ignore
     )
 
-    configuration = ParticleSwarmOptimizationConfig(
-        population_size=20,
+    # configuration = ParticleSwarmOptimizationConfig(
+    #     population_size=20,
+    #     fitness_error=1e-3,
+    #     max_cycles=300,
+    #     c1=0.1,
+    #     c2=0.1,
+    #     w=[0.35, 1],
+    #     early_stopping=EarlyStopping(patience=5, min_delta=0.01),
+    # )
+    configuration = GreyWolfOptimizationConfig(
+        population_size=100,
         fitness_error=1e-3,
         max_cycles=300,
-        c1=0.1,
-        c2=0.1,
-        w=[0.35, 1],
         early_stopping=EarlyStopping(patience=5, min_delta=0.01),
     )
 
     start_time = time.time()
-    result = ParticleSwarmOptimization(configuration, debug=True).optimize(task)
+    # result = ParticleSwarmOptimization(configuration, debug=True).optimize(task)
+    result = GreyWolfOptimization(configuration, debug=True).optimize(task, mode="process", workers=6)
     elapsed_time = time.time() - start_time
 
     logs("ec", now, ["Training completed in {:.2f} seconds.".format(elapsed_time)])
